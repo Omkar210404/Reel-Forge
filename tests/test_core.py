@@ -77,3 +77,16 @@ def test_check_html_rejects_the_prompt_itself():
     from reelforge.animate import check_html, claude_prompt
     assert "That is the prompt" in check_html(claude_prompt("A robot woke up."))
     assert check_html("<html><script>window.renderFrame=t=>{}</script></html>") is None
+
+
+def test_dialogue_parsing_and_voice_casting():
+    script = "NARRATOR: It was midnight.\nArjun: I'm stuck!\nCLAUDE: Let's fix it: step by step."
+    lines = voice.parse_dialogue(script)
+    assert lines == [("NARRATOR", "It was midnight."), ("ARJUN", "I'm stuck!"),
+                     ("CLAUDE", "Let's fix it: step by step.")]
+    assert voice.parse_dialogue("That's an AI agent: it reads and checks.") is None   # narration
+    cast = voice.cast_voices([s for s, _ in lines], "en-US-AndrewMultilingualNeural",
+                             "CLAUDE=en-US-AnaNeural")
+    assert cast["NARRATOR"] == ("en-US-AndrewMultilingualNeural", "+0Hz")
+    assert cast["CLAUDE"] == ("en-US-AnaNeural", "+0Hz")
+    assert cast["ARJUN"] == ("en-IN-PrabhatNeural", "+20Hz")   # first free voice in the pool

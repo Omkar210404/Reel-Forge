@@ -242,7 +242,8 @@ def render_segment(kind: str, src: Path | None, frames: int, idx: int, out: Path
 
 
 def build(words: list[dict], total: float, cfg: dict, video: dict, mode: str,
-          image: str, topic: str, key: str, workdir: Path, log) -> tuple[Path, list[str]]:
+          image: str, topic: str, key: str, workdir: Path, log,
+          scenes: list[dict] | None = None) -> tuple[Path, list[str]]:
     """Render the background track. Returns (video path, source used for each beat).
 
     mode: pexels (stock video, AI image if a search finds nothing), ai (AI images),
@@ -253,11 +254,11 @@ def build(words: list[dict], total: float, cfg: dict, video: dict, mode: str,
     if mode == "html":
         # A Claude-written Three.js animation: one scene per sentence, recorded in one pass.
         from .animate import record
-        scenes = beats(words, total, max_len=1e9)
+        scenes = scenes or beats(words, total, max_len=1e9)
         out = workdir / "background.mp4"
-        record(Path(image), scenes, total, w, h, fps, out, log)
+        record(Path(image), scenes, total, w, h, fps, out, log, words)
         return out, ["html"] * len(scenes)
-    bs = beats(words, total, float(cfg["max_beat_seconds"]))
+    bs = scenes or beats(words, total, float(cfg["max_beat_seconds"]))
     scenes = (plan_scenes([b["text"] for b in bs], topic, cfg, log)
               if mode in ("pexels", "ai") else [{}] * len(bs))
     used, parts, kinds = set(), [], []

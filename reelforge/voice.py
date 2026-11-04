@@ -9,7 +9,7 @@ from .config import ROOT
 from .ffmpeg import ffmpeg, probe_duration
 
 
-def synthesize(text: str, voice: str, rate: str, out_wav: Path) -> float:
+def synthesize(text: str, voice: str, rate: str, out_wav: Path, pitch: str = "+0Hz") -> float:
     """Speak `text` with an edge-tts neural voice. Returns the audio length in seconds."""
     import edge_tts
 
@@ -17,7 +17,7 @@ def synthesize(text: str, voice: str, rate: str, out_wav: Path) -> float:
     # The free edge-tts service sometimes drops a request ("NoAudioReceived"); retrying works.
     for attempt in range(4):
         try:
-            asyncio.run(edge_tts.Communicate(text, voice, rate=rate).save(str(mp3)))
+            asyncio.run(edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).save(str(mp3)))
             break
         except Exception as e:  # noqa: BLE001 - network/service errors vary
             if attempt == 3:
@@ -28,6 +28,75 @@ def synthesize(text: str, voice: str, rate: str, out_wav: Path) -> float:
     ffmpeg("-i", mp3, "-ac", "1", "-ar", "48000", out_wav)
     mp3.unlink(missing_ok=True)
     return probe_duration(out_wav)
+
+
+# Dialogue scripts: every line starts with "NAME:" (up to 3 words, no apostrophes).
+SPEAKER_RE = re.compile(r"^\s*([A-Za-z][\w-]*(?: [A-Za-z0-9][\w-]*){0,2})\s*:\s*(\S.*)$")
+# Voices handed out to characters in order of appearance (NARRATOR uses the main voice).
+# Mascot-like names get the cute child voice; people get the others (a pitched-up voice
+# stands in for a boy, since edge-tts has no boy voice).
+CUTE_VOICE = "en-US-AnaNeural"
+CUTE_NAMES = re.compile(r"CLAUDE|BUDDY|BOT|ROBOT|PET|BUNNY|PUPPY|KITTY")
+CAST_POOL = ["en-IN-PrabhatNeural+20Hz", "en-GB-MaisieNeural", "en-US-GuyNeural",
+             "en-US-JennyNeural", "en-GB-RyanNeural"]
+
+
+def parse_dialogue(text: str) -> list[tuple[str, str]] | None:
+    """[(SPEAKER, line), ...] if every non-empty line is 'NAME: text', else None."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    found = [SPEAKER_RE.match(ln) for ln in lines]
+    if len(lines) < 2 or not all(found):
+        return None
+    return [(m[1].strip().upper(), " ".join(m[2].split())) for m in found]
+
+
+def cast_voices(speakers: list[str], narrator_voice: str, overrides: str = "") -> dict:
+    """Map each speaker to (voice, pitch). `overrides` looks like
+    'CLAUDE=en-US-AnaNeural, ARJUN=en-IN-PrabhatNeural+20Hz'."""
+    wanted = {}
+    for part in re.split(r"[,\n;]", overrides or ""):
+        if "=" in part:
+            name, v = part.split("=", 1)
+            wanted[name.strip().upper()] = v.strip()
+    cast, pool = {}, [v for v in CAST_POOL if v not in wanted.values()]
+    for sp in dict.fromkeys(speakers):
+        if sp in wanted:
+            v = wanted[sp]
+        elif sp == "NARRATOR":
+            v = narrator_voice
+        elif CUTE_NAMES.search(sp) and CUTE_VOICE not in [c[0] for c in cast.values()]:
+            v = CUTE_VOICE
+        else:
+            v = pool.pop(0) if pool else narrator_voice
+        m = re.match(r"^(.*?)([+-]\d+Hz)?$", v)
+        cast[sp] = (m[1], m[2] or "+0Hz")
+    return cast
+
+
+def synthesize_dialogue(lines: list[tuple[str, str]], cast: dict, rate: str, out_wav: Path,
+                        gap: float = 0.3) -> tuple[float, list[dict]]:
+    """Speak each line with its speaker's voice and join them with short pauses.
+    Returns (total seconds, [{speaker, text, start, end}])."""
+    import wave
+
+    parts, segs, t = [], [], 0.0
+    for i, (sp, text) in enumerate(lines):
+        part = out_wav.with_name(f"line{i:03d}.wav")
+        voice, pitch = cast[sp]
+        dur = synthesize(text, voice, rate, part, pitch)
+        segs.append({"speaker": sp, "text": text, "start": round(t, 3), "end": round(t + dur, 3)})
+        parts.append(part)
+        t += dur + gap
+    silence = b"\0\0" * int(48000 * gap)
+    with wave.open(str(out_wav), "wb") as out:
+        out.setnchannels(1), out.setsampwidth(2), out.setframerate(48000)
+        for i, part in enumerate(parts):
+            with wave.open(str(part), "rb") as w:
+                out.writeframes(w.readframes(w.getnframes()))
+            if i < len(parts) - 1:
+                out.writeframes(silence)
+            part.unlink()
+    return probe_duration(out_wav), segs
 
 
 def norm(word: str) -> str:

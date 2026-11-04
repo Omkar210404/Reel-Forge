@@ -16,6 +16,9 @@ BREAKS = ".!?,;:"
 def group_words(words: list[dict], per_group: int) -> list[list[dict]]:
     groups, cur = [], []
     for w in words:
+        if cur and w.get("speaker") != cur[-1].get("speaker"):  # never mix two speakers
+            groups.append(cur)
+            cur = []
         cur.append(w)
         if len(cur) >= per_group or w["text"][-1] in BREAKS:
             groups.append(cur)
@@ -50,7 +53,7 @@ class Renderer:
         self.font = (ImageFont.truetype(path, cfg["size"]) if path
                      else ImageFont.load_default(cfg["size"]))
 
-    def _band(self, words: list[str], hi: int | None) -> Image.Image:
+    def _band(self, words: list[str], hi: int | None, hl: str | None = None) -> Image.Image:
         """Draw the phrase into a tight transparent image, wrapping to ~86% of frame width."""
         c, font, sw = self.c, self.font, self.c["stroke_width"]
         space = font.getlength(" ")
@@ -73,7 +76,7 @@ class Renderer:
             lw = sum(x[2] for x in ln) + space * (len(ln) - 1)
             x, y = (self.w - lw) / 2, pad + li * lh
             for i, word, wl in ln:
-                color = c["highlight_color"] if i == hi else c["color"]
+                color = (hl or c["highlight_color"]) if i == hi else c["color"]
                 d.text((x + 4, y + 6), word, font=font, fill=(0, 0, 0, 140),
                        stroke_width=sw, stroke_fill=(0, 0, 0, 140))           # soft shadow
                 d.text((x, y), word, font=font, fill=color,
@@ -81,8 +84,9 @@ class Renderer:
                 x += wl + space
         return img
 
-    def frame(self, words: list[str], hi: int | None, scale: float = 1.0) -> Image.Image:
-        band = self._band(words, hi)
+    def frame(self, words: list[str], hi: int | None, scale: float = 1.0,
+              hl: str | None = None) -> Image.Image:
+        band = self._band(words, hi, hl)
         if scale != 1.0:
             band = band.resize((max(1, int(band.width * scale)), max(1, int(band.height * scale))),
                                Image.LANCZOS)
@@ -115,17 +119,18 @@ def build(words: list[dict], cfg: dict, width: int, height: int, fps: int,
 
     for start, end, gi, wi in items:
         texts = [w["text"].upper() if cfg["uppercase"] else w["text"] for w in groups[gi]]
+        hl = groups[gi][0].get("hl")
         start = max(start, cursor)
         add(blank, start - cursor)
         if wi in (0, None):  # phrase just appeared: a couple of growing frames first
             for s in POP_SCALES:
                 if end - cursor > 3 * frame_t:
                     p = workdir / f"c{n:05d}.png"
-                    r.frame(texts, wi, s).save(p)
+                    r.frame(texts, wi, s, hl).save(p)
                     n += 1
                     add(p, frame_t)
         p = workdir / f"c{n:05d}.png"
-        r.frame(texts, wi).save(p)
+        r.frame(texts, wi, hl=hl).save(p)
         n += 1
         add(p, end - cursor)
     add(blank, total - cursor)
