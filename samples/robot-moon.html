@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Tiny robot on the Moon</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#141a46}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+</head><body>
+<script type="module">
+// ReelForge sample: a 3D cartoon short that follows the ReelForge animation contract
+// (window.REEL timing in, window.renderFrame(t) out). Everything is built from primitives.
+import * as THREE from 'three';
+
+const LINES = ['A tiny robot woke up alone on the Moon.', 'It looked up at the Earth, glowing in the dark sky.',
+  'So it built a rocket out of old space junk.', 'And one morning, it flew home.'];
+const REEL = window.REEL || (() => {           // preview timing when opened directly
+  let t = 0; const scenes = LINES.map(text => { const s = { start: t, end: t + 3 }; t += 3; return { ...s, text }; });
+  return { duration: t, scenes };
+})();
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => k * k * (3 - 2 * k);                       // smoothstep
+const easeOutBack = k => { const c = 1.7; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+const seg = (p, a, b) => clamp((p - a) / (b - a));           // progress of p inside [a, b]
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rand = rng(42);
+
+// ---------- renderer, scene, toon look ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(1); renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1f5c);
+scene.fog = new THREE.Fog(0x1b1f5c, 35, 110);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 300);
+
+const ramp = new THREE.DataTexture(new Uint8Array([90, 90, 90, 255, 175, 175, 175, 255, 255, 255, 255, 255]), 3, 1);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
+const toon = (color, extra = {}) => new THREE.MeshToonMaterial({ color, gradientMap: ramp, ...extra });
+const glow = color => new THREE.MeshBasicMaterial({ color });
+
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x3a2f5a, 1.6));
+const key = new THREE.DirectionalLight(0xfff0d6, 2.6); key.position.set(6, 10, 8); scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fb8ff, 2.0); rim.position.set(-6, 4, -10); scene.add(rim);
+
+// ---------- world: moon ground, craters, stars, earth ----------
+const moon = new THREE.Mesh(new THREE.SphereGeometry(40, 96, 64), toon(0xc9c3d8)); moon.position.y = -40; scene.add(moon);
+for (let i = 0; i < 26; i++) {
+  const a = rand() * Math.PI * 2, r = 3 + rand() * 22, s = 0.4 + rand() * 1.6;
+  const crater = new THREE.Mesh(new THREE.CylinderGeometry(s, s * 0.8, 0.12, 28), toon(0x9e97b5));
+  const x = Math.cos(a) * r, z = Math.sin(a) * r - 4;
+  crater.position.set(x, Math.sqrt(1600 - x * x - (z) * (z)) - 40 + 0.01, z);
+  crater.lookAt(0, -40, 0); crater.rotateX(Math.PI / 2); scene.add(crater);
+}
+const starPos = [];
+for (let i = 0; i < 1400; i++) {
+  const u = rand() * 2 - 1, th = rand() * Math.PI * 2, r = 120;
+  starPos.push(Math.sqrt(1 - u * u) * Math.cos(th) * r, Math.abs(u) * r * 0.9 + 4, Math.sqrt(1 - u * u) * Math.sin(th) * r);
+}
+const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.55, fog: false }));
+scene.add(stars);
+
+const earth = new THREE.Group(); earth.position.set(-9, 13, -38); scene.add(earth);
+const earthBall = new THREE.Mesh(new THREE.SphereGeometry(5, 48, 32), toon(0x2f8cff, { fog: false })); earth.add(earthBall);
+for (let i = 0; i < 9; i++) {                                    // green continents as soft bumps
+  const land = new THREE.Mesh(new THREE.SphereGeometry(1.2 + rand() * 1.4, 20, 14), toon(0x46d17a, { fog: false }));
+  const v = new THREE.Vector3(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1).normalize().multiplyScalar(4.25);
+  land.position.copy(v); land.scale.set(1, 1, 0.45); land.lookAt(0, 0, 0); earthBall.add(land);
+}
+const halo = new THREE.Mesh(new THREE.SphereGeometry(5.9, 48, 32),
+  new THREE.MeshBasicMaterial({ color: 0x9fd6ff, transparent: true, opacity: 0.25, side: THREE.BackSide, fog: false }));
+earth.add(halo);
+
+// ---------- the robot ----------
+const robot = new THREE.Group(); scene.add(robot);
+const body = new THREE.Group(); robot.add(body);                // body pivots at the feet (for waking up)
+const white = toon(0xf4f1ea), teal = toon(0x2ec4b6), dark = toon(0x1d2340), orange = toon(0xff8a3d);
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.45, 8, 20), white); torso.position.y = 0.95; body.add(torso);
+const belly = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24), teal); belly.position.set(0, 0.95, 0.43); body.add(belly);
+const head = new THREE.Group(); head.position.y = 1.72; body.add(head);
+head.add(new THREE.Mesh(new THREE.SphereGeometry(0.55, 40, 28), white));
+const face = new THREE.Mesh(new THREE.SphereGeometry(0.46, 48, 32), dark); face.scale.set(1, 0.74, 0.62); face.position.z = 0.29; head.add(face);
+const eyes = [];
+for (const sx of [-1, 1]) {
+  const eye = new THREE.Group(); eye.position.set(0.17 * sx, 0.02, 0.6); head.add(eye);
+  eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.135, 28, 20), glow(0x7df9ff)));
+  const shine = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), glow(0xffffff)); shine.position.set(0.045, 0.055, 0.12); eye.add(shine);
+  eyes.push(eye);
+}
+const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.35), dark); antenna.position.y = 0.68; head.add(antenna);
+const bulbMat = new THREE.MeshBasicMaterial({ color: 0xff4d6d });
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), bulbMat); bulb.position.y = 0.88; head.add(bulb);
+const arms = [];
+for (const sx of [-1, 1]) {
+  const shoulder = new THREE.Group(); shoulder.position.set(0.5 * sx, 1.2, 0); body.add(shoulder);
+  const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.42, 6, 12), teal); arm.position.y = -0.3; shoulder.add(arm);
+  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), orange); hand.position.y = -0.6; shoulder.add(hand);
+  arms.push(shoulder);
+}
+const legs = [];
+for (const sx of [-1, 1]) {
+  const hip = new THREE.Group(); hip.position.set(0.2 * sx, 0.45, 0); body.add(hip);
+  const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.2, 6, 12), teal); leg.position.y = -0.2; hip.add(leg);
+  const foot = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), orange); foot.scale.set(1, 0.6, 1.3); foot.position.set(0, -0.38, 0.05); hip.add(foot);
+  legs.push(hip);
+}
+
+// ---------- rocket parts: scattered junk that flies together ----------
+const ROCKET = new THREE.Vector3(2.6, 0, -1.6);
+const rocket = new THREE.Group(); rocket.position.copy(ROCKET); scene.add(rocket);
+const partDefs = [
+  [new THREE.CylinderGeometry(0.75, 0.85, 1.2, 28), toon(0xe9e4f2), [0, 1.0, 0]],
+  [new THREE.CylinderGeometry(0.7, 0.75, 1.1, 28), toon(0xff5c7a), [0, 2.15, 0]],
+  [new THREE.CylinderGeometry(0.55, 0.7, 0.9, 28), toon(0xe9e4f2), [0, 3.15, 0]],
+  [new THREE.ConeGeometry(0.55, 1.1, 28), toon(0xff5c7a), [0, 4.15, 0]],
+  [new THREE.CylinderGeometry(0.28, 0.28, 0.08, 24), glow(0x7df9ff), [0, 2.3, 0.72], [Math.PI / 2, 0, 0]],
+  [new THREE.BoxGeometry(0.12, 0.9, 0.7), toon(0xffc93c), [0.85, 0.75, 0], [0, 0, -0.25]],
+  [new THREE.BoxGeometry(0.12, 0.9, 0.7), toon(0xffc93c), [-0.85, 0.75, 0], [0, 0, 0.25]],
+  [new THREE.BoxGeometry(0.7, 0.9, 0.12), toon(0xffc93c), [0, 0.75, 0.85], [0.25, 0, 0]],
+  [new THREE.CylinderGeometry(0.45, 0.6, 0.45, 24), toon(0x5a5f80), [0, 0.2, 0]],
+];
+const parts = partDefs.map(([geo, mat, pos, rot = [0, 0, 0]], i) => {
+  const mesh = new THREE.Mesh(geo, mat); rocket.add(mesh);
+  return { mesh, target: new THREE.Vector3(...pos), targetRot: new THREE.Euler(...rot),
+    start: new THREE.Vector3(1.3 + rand() * 2.8, 0.25, -0.5 + rand() * 1.6),   // junk lying beside the launch spot
+    startRot: new THREE.Euler(rand() * 3, rand() * 3, Math.PI / 2 + rand()) };
+});
+const flame = new THREE.Group(); rocket.add(flame); flame.position.y = -0.15;
+const flameOuter = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6, 20), new THREE.MeshBasicMaterial({ color: 0xffa62b, transparent: true, opacity: 0.9 }));
+const flameInner = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.0, 20), glow(0xfff3b0));
+flameOuter.rotation.x = flameInner.rotation.x = Math.PI; flameOuter.position.y = -0.8; flameInner.position.y = -0.55;
+flame.add(flameOuter, flameInner);
+const puffs = [];
+for (let i = 0; i < 14; i++) {
+  const puff = new THREE.Mesh(new THREE.SphereGeometry(0.35 + rand() * 0.35, 14, 10), toon(0xf0ecff, { transparent: true }));
+  puff.userData = { a: rand() * Math.PI * 2, d: 0.6 + rand() * 1.6, delay: rand() * 0.3 }; scene.add(puff); puffs.push(puff);
+}
+
+// ---------- animation ----------
+const lookTarget = new THREE.Vector3();
+function setCamera(from, to, k, lookFrom, lookTo) {
+  camera.position.set(lerp(from[0], to[0], k), lerp(from[1], to[1], k), lerp(from[2], to[2], k));
+  lookTarget.set(lerp(lookFrom[0], lookTo[0], k), lerp(lookFrom[1], lookTo[1], k), lerp(lookFrom[2], lookTo[2], k));
+  camera.lookAt(lookTarget);
+}
+function sceneAt(t) {
+  const sc = REEL.scenes; let i = sc.findIndex(s => t < s.end); if (i < 0) i = sc.length - 1;
+  return { i, p: clamp((t - sc[i].start) / Math.max(sc[i].end - sc[i].start, 0.001)) };
+}
+function pose({ lie = 0, bob = 0, armL = 0, armR = 0, walk = 0, turn = 0, tilt = 0, eyesOpen = 1, x = 0, z = 0, scale = 1 }) {
+  robot.position.set(x, bob, z); robot.rotation.y = turn; robot.scale.setScalar(scale);
+  body.rotation.x = -lie * Math.PI / 2; body.position.z = lie * 0.25;
+  head.rotation.x = -tilt;
+  arms[0].rotation.z = -0.15 - armL; arms[1].rotation.z = 0.15 + armR;
+  legs[0].rotation.x = Math.sin(walk) * 0.5; legs[1].rotation.x = -Math.sin(walk) * 0.5;
+  eyes.forEach(e => { e.scale.y = Math.max(eyesOpen, 0.08); });
+}
+
+window.renderFrame = (t) => {
+  const { i, p } = sceneAt(t);
+  const breathe = Math.sin(t * 2.4) * 0.02, blink = (t % 3.1) < 0.12 ? 0.1 : 1;
+  bulbMat.color.setHex(Math.sin(t * 6) > 0 ? 0xff4d6d : 0xffb3c1);
+  earth.rotation.y = t * 0.12; stars.rotation.y = t * 0.004;
+  let built = i >= 3 ? 1 : 0, lift = 0;
+
+  if (i === 0) {                       // wakes up alone
+    const up = ease(seg(p, 0.25, 0.65));
+    const open = seg(p, 0.6, 0.75) * (p > 0.8 && p < 0.86 ? 0.1 : 1);
+    pose({ lie: 1 - up, bob: breathe * up, eyesOpen: open, armL: Math.sin(seg(p, 0.75, 1) * Math.PI * 2) * 0.3,
+      armR: easeOutBack(seg(p, 0.72, 0.9)) * 2.3 * (1 - seg(p, 0.92, 1)) + Math.sin(t * 14) * 0.25 * seg(p, 0.75, 0.9) });
+    setCamera([0.6, 2.4, 6.5], [0.2, 1.7, 4.2], ease(p), [0, 0.6, 0], [0, 1.4, 0]);
+  } else if (i === 1) {                // looks up at the earth
+    const k = ease(seg(p, 0, 0.5));
+    pose({ bob: breathe, turn: lerp(0, 2.75, k), tilt: lerp(0, 0.55, ease(seg(p, 0.3, 0.7))), eyesOpen: blink,
+      armL: 0.2 + Math.sin(t * 2) * 0.05, armR: lerp(0.2, 1.1, ease(seg(p, 0.55, 0.8))) });
+    setCamera([3.4, 1.9, 5.8], [2.3, 1.2, 4.9], ease(p), [0, 1.5, 0], [-4, 5.5, -18]);
+  } else if (i === 2) {                // builds a rocket from junk
+    built = p;
+    const hop = Math.abs(Math.sin(t * 7)) * 0.35 * seg(p, 0.05, 0.15) * (1 - seg(p, 0.85, 0.95));
+    pose({ bob: hop, turn: 0.5, eyesOpen: blink, armL: 1.6 + Math.sin(t * 9) * 0.6, armR: 1.6 + Math.cos(t * 9) * 0.6, x: 0, z: 0.9 });
+    setCamera([2.4, 2.8, 9.6], [2.0, 2.4, 8.4], ease(p), [1.2, 1.3, -0.3], [1.3, 1.9, -0.6]);
+  } else {                             // flies home
+    const walk = ease(seg(p, 0, 0.3));
+    const inside = seg(p, 0.28, 0.36);
+    lift = Math.pow(seg(p, 0.42, 1), 2.2);
+    pose({ x: lerp(0, ROCKET.x - 0.2, walk), z: lerp(0.9, ROCKET.z + 1.0, walk), turn: lerp(0.5, 2.4, walk),
+      walk: t * 10 * (walk > 0 && walk < 1 ? 1 : 0), scale: 1 - inside, eyesOpen: blink, armR: walk < 1 ? 0.3 : 2.4 });
+    const camY = 2.0 + lift * 22, lookY = 2.2 + lift * 30;
+    setCamera([5.5, 2.0, 9.5], [6.5, camY, 12], ease(p), [ROCKET.x, 2.2, ROCKET.z], [ROCKET.x - 3, lookY, ROCKET.z - 10]);
+  }
+
+  // rocket assembly and flight
+  parts.forEach((part, n) => {
+    const k = clamp(built * 1.45 - n * 0.05);
+    const arc = Math.sin(k * Math.PI) * 2.2;
+    const q = easeOutBack(k);
+    part.mesh.position.set(lerp(part.start.x, part.target.x, q), lerp(part.start.y, part.target.y, q) + arc, lerp(part.start.z, part.target.z, q));
+    part.mesh.rotation.set(lerp(part.startRot.x, part.targetRot.x, k), lerp(part.startRot.y, part.targetRot.y, k), lerp(part.startRot.z, part.targetRot.z, k));
+  });
+  const shake = i === 3 ? Math.sin(t * 60) * 0.04 * seg(p, 0.36, 0.45) * (1 - seg(p, 0.6, 0.8)) : 0;
+  rocket.position.set(ROCKET.x + shake, lift * 30, ROCKET.z - lift * 6);
+  rocket.rotation.z = lift * 0.15;
+  const fire = i === 3 ? seg(p, 0.36, 0.42) : 0;
+  flame.scale.set(fire * (1 + Math.sin(t * 47) * 0.12), fire * (1.2 + Math.sin(t * 31) * 0.25 + lift * 1.5), fire);
+  puffs.forEach(pf => {
+    const { a, d, delay } = pf.userData; const k = i === 3 ? seg(p, 0.38 + delay * 0.3, 0.75 + delay) : 0;
+    pf.position.set(ROCKET.x + Math.cos(a) * d * (0.3 + k * 2.5), 0.3 + k * 0.6, ROCKET.z + Math.sin(a) * d * (0.3 + k * 2.5));
+    pf.scale.setScalar(k > 0 ? 0.4 + k * 1.6 : 0.0001); pf.material.opacity = 1 - k;
+  });
+  renderer.render(scene, camera);
+};
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+window.REEL_READY = true;
+if (!window.REEL_CAPTURE) {
+  const t0 = performance.now();
+  const loop = () => { window.renderFrame(((performance.now() - t0) / 1000) % REEL.duration); requestAnimationFrame(loop); };
+  loop();
+}
+</script>
+</body></html>
