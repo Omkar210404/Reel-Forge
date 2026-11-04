@@ -51,7 +51,7 @@ def assemble(bg: Path, cap_list: Path, voice_wav: Path, music: Path | None, tota
            "-movflags", "+faststart", out)
 
 
-def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
+def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", characters: str = "",
          image: str | None = None, html: str | None = None, music: str | None = None, voice_name: str | None = None,
          overrides: dict | None = None, cfg: dict | None = None, keep_work: bool = False,
          log=print) -> dict:
@@ -93,7 +93,7 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
         from .animate import ask_claude, check_html
         if not html:  # nothing pasted: let Claude Code write it, keep it next to the video
             log("[3/4] visuals    3D cartoon by Claude")
-            html = str(ask_claude(script, topic, out.with_suffix(".html"), log))
+            html = str(ask_claude(script, topic, out.with_suffix(".html"), log, characters))
         if not Path(html).exists():
             raise ValueError(f"animation HTML not found: {html!r}")
         if problem := check_html(Path(html).read_text(encoding="utf-8", errors="replace")):

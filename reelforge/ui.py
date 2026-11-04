@@ -39,7 +39,7 @@ def run_job(req: dict) -> None:
         cfg["background"]["art_style"] = req.get("art", "cartoon")
         if not req.get("music"):
             cfg["music"]["folder"] = "__none__"
-        rep = make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""),
+        rep = make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""), characters=req.get("chars", ""),
              image=str(image) if image else None, html=str(html) if html else None, voice_name=req["voice"], cfg=cfg,
              log=lambda s: job["log"].append(s))
         if rep.get("html") and not html:  # Claude wrote it: show it in the page
@@ -107,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(b"not found", "text/plain", 404)
         req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
         if self.path == "/api/prompt":
-            return self._json({"prompt": claude_prompt(req.get("script", ""), req.get("topic", ""))})
+            return self._json({"prompt": claude_prompt(req.get("script", ""), req.get("topic", ""), req.get("chars", ""))})
         if not req.get("script", "").strip():
             return self._json({"error": "Paste a script first."}, 400)
         if req.get("bg") == "image" and not req.get("image"):
@@ -168,7 +168,8 @@ video{width:100%;height:100%;display:block}.hint{color:var(--mute);font-size:13p
 <div class="row" id="artrow"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
 <div class="row"><div><label for="wpg">Words per caption</label><input id="wpg" type="number" min="1" max="8" value="3"></div>
 <div><label for="hl">Highlight colour</label><input id="hl" type="color" value="#ffd60a"></div></div>
-<div id="htmlrow"><p class="hint"><b>Direct:</b> leave the box below empty and press <b>Make reel</b>. ReelForge asks Claude Code on this PC to write the animation (your Claude plan, no API key, about 5-10 min extra).<br>
+<div id="htmlrow"><label for="chars">Characters (how they look)</label><textarea id="chars" style="min-height:80px" placeholder="e.g. Arjun: a 12-year-old boy in a yellow hoodie... / Claude buddy: a tiny orange blocky creature..."></textarea>
+<p class="hint"><b>Direct:</b> leave the box below empty and press <b>Make reel</b>. ReelForge asks Claude Code on this PC to write the animation (your Claude plan, no API key, about 5-10 min extra).<br>
 <b>Or manual:</b> <button class="ghost sm" id="cp">Copy Claude prompt</button> paste it into <a href="https://claude.ai/new" target="_blank" rel="noopener" style="color:var(--acc)">claude.ai</a>, then paste Claude's HTML reply below.
 <button class="ghost sm" id="demo">Load demo</button></p>
 <label for="html">Claude's animation HTML</label><textarea id="html" class="code" placeholder="Leave empty: Claude Code writes it for you. Or paste the HTML file from claude.ai here."></textarea></div>
@@ -194,14 +195,14 @@ function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';$('htmlrow'
  $('bghint').textContent=(b==='auto'||b==='pexels')?(info.pexels?'Pexels key found: real stock video per line.':'No Pexels key in .env. '+ai):b==='ai'?ai:''}
 $('bg').onchange=hint;
 $('cp').onclick=async()=>{if(!$('script').value.trim()){$('log').textContent='Paste a script first.';return}
- const j=await (await fetch('/api/prompt',{method:'POST',body:JSON.stringify({script:$('script').value,topic:$('topic').value})})).json();
+ const j=await (await fetch('/api/prompt',{method:'POST',body:JSON.stringify({script:$('script').value,topic:$('topic').value,chars:$('chars').value})})).json();
  try{await navigator.clipboard.writeText(j.prompt);$('log').textContent='Claude prompt copied. Now paste it into claude.ai (not into this page). When Claude replies with an HTML file, copy that and paste it into the box below.'}
  catch(e){$('log').textContent=j.prompt}};
 $('demo').onclick=async()=>{const d=await (await fetch('/api/demo')).json();$('script').value=d.script;$('html').value=d.html;
  $('log').textContent='Demo loaded: a tiny robot story with a ready-made 3D animation. Press Make reel.'};$('sample').onclick=()=>{$('script').value=info.sample;$('topic').value='morning habits'};
 const readImg=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
 $('go').onclick=async()=>{const body={script:$('script').value,topic:$('topic').value,voice:$('voice').value,bg:$('bg').value,
- style:$('style').value,art:$('art').value,wpg:$('wpg').value,hl:$('hl').value,music:$('music').checked};
+ style:$('style').value,art:$('art').value,chars:$('chars').value,wpg:$('wpg').value,hl:$('hl').value,music:$('music').checked};
  if(body.bg==='html')body.html=$('html').value;
  if(body.bg==='image'&&$('img').files[0])body.image=await readImg($('img').files[0]);
  const r=await fetch('/api/make',{method:'POST',body:JSON.stringify(body)});const j=await r.json();

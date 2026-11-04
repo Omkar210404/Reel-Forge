@@ -29,10 +29,11 @@ def sentences(text: str) -> list[str]:
     return out
 
 
-def claude_prompt(script: str, topic: str = "") -> str:
+def claude_prompt(script: str, topic: str = "", characters: str = "") -> str:
     lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sentences(script)))
     return f"""Make a 3D cartoon animation for a vertical short video (9:16, 1080x1920) as ONE self-contained HTML file using Three.js.
 {f"Topic: {topic}" if topic else ""}
+{f"CHARACTERS - build exactly these, keep the same look in every scene:{chr(10)}{characters.strip()}{chr(10)}" if characters.strip() else ""}
 NARRATION - one scene per line, in this order:
 {lines}
 
@@ -47,7 +48,7 @@ TECHNICAL RULES (a tool records this page frame by frame, so follow them exactly
 
 LOOK:
 - Pixar-like cartoon: MeshToonMaterial with a small gradient map, bright saturated colours, warm key light plus a rim light, soft fog, rounded shapes (spheres, capsules, rounded boxes).
-- ONE cute main character built from primitives (big glossy eyes with highlights, simple expressive body) that stays the same in every scene and ACTS OUT each line: walks, turns, waves, jumps, reacts.
+- {'The characters above, built' if characters.strip() else 'ONE cute main character built'} from primitives{'' if characters.strip() else ' (big glossy eyes with highlights, simple expressive body)'}, the same in every scene, ACTING OUT each line: walks, turns, waves, jumps, reacts.
 - Each scene has its own setting and props and its own camera move (push-in, orbit, follow). Use easing so motion feels alive, plus small idle motion (breathing, blinking).
 - FRAMING (the 9:16 frame is narrow): keep the WHOLE character in view in every scene, head to feet, about 35-50% of the screen height, standing in the upper half of the frame above the caption band. Use a camera FOV around 50 and pull the camera back far enough; close-ups only on the face, never cutting off the head.
 - Smooth, polished shapes: use high segment counts (spheres 32+ segments), rounded edges, a face with big eyes on the FRONT of the head, and a simple colourful ground and background for each scene.
@@ -56,7 +57,7 @@ LOOK:
 Reply with the complete HTML file only."""
 
 
-def ask_claude(script: str, topic: str, out: Path, log) -> Path:
+def ask_claude(script: str, topic: str, out: Path, log, characters: str = "") -> Path:
     """Have the local Claude Code CLI (`claude -p`) write the animation. Uses the user's own
     Claude plan; no API key. Runs in an empty folder so it only sees the prompt."""
     import re
@@ -69,7 +70,7 @@ def ask_claude(script: str, topic: str, out: Path, log) -> Path:
                            "@anthropic-ai/claude-code) or paste HTML from claude.ai instead.")
     log("    asking Claude Code to write the 3D animation (usually 5-10 min)...")
     with tempfile.TemporaryDirectory() as empty:
-        res = subprocess.run([exe, "-p", "--output-format", "text"], input=claude_prompt(script, topic),
+        res = subprocess.run([exe, "-p", "--output-format", "text"], input=claude_prompt(script, topic, characters),
                              capture_output=True, text=True, encoding="utf-8", cwd=empty, timeout=900)
     reply = res.stdout or ""
     m = re.search(r"<!doctype html.*?</html>|<html.*?</html>", reply, re.S | re.I)
