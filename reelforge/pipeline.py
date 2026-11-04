@@ -52,7 +52,7 @@ def assemble(bg: Path, cap_list: Path, voice_wav: Path, music: Path | None, tota
 
 
 def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
-         image: str | None = None, music: str | None = None, voice_name: str | None = None,
+         image: str | None = None, html: str | None = None, music: str | None = None, voice_name: str | None = None,
          overrides: dict | None = None, cfg: dict | None = None, keep_work: bool = False,
          log=print) -> dict:
     """Build a reel from script text. Returns a report dict used by the CLI, UI and selftest."""
@@ -87,8 +87,12 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
     rep.update(words=words, words_matched=matched, phrases=phrases)
     log(f"      {matched}/{len(words)} script words matched to speech, {phrases} caption phrases")
 
-    mode = bg or cfg["background"]["mode"]
+    mode = bg or ("html" if html else cfg["background"]["mode"])
     image = image or cfg["background"]["image"]
+    if mode == "html":
+        if not (html and Path(html).exists()):
+            raise ValueError(f"animation HTML not found: {html!r}")
+        image = html
     key = pexels_key() if mode in ("pexels", "auto") else ""
     if mode == "auto":
         mode = "pexels" if key else "ai"

@@ -246,9 +246,17 @@ def build(words: list[dict], total: float, cfg: dict, video: dict, mode: str,
     """Render the background track. Returns (video path, source used for each beat).
 
     mode: pexels (stock video, AI image if a search finds nothing), ai (AI images),
-    gradient, or image (the user's picture)."""
+    gradient, image (the user's picture, path in `image`), or html (a Three.js animation
+    file, path in `image`)."""
     workdir.mkdir(parents=True, exist_ok=True)
     w, h, fps = video["width"], video["height"], video["fps"]
+    if mode == "html":
+        # A Claude-written Three.js animation: one scene per sentence, recorded in one pass.
+        from .animate import record
+        scenes = beats(words, total, max_len=1e9)
+        out = workdir / "background.mp4"
+        record(Path(image), scenes, total, w, h, fps, out, log)
+        return out, ["html"] * len(scenes)
     bs = beats(words, total, float(cfg["max_beat_seconds"]))
     scenes = (plan_scenes([b["text"] for b in bs], topic, cfg, log)
               if mode in ("pexels", "ai") else [{}] * len(bs))
