@@ -89,10 +89,12 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
 
     mode = bg or cfg["background"]["mode"]
     image = image or cfg["background"]["image"]
-    key = pexels_key() if mode == "pexels" else ""
+    key = pexels_key() if mode in ("pexels", "auto") else ""
+    if mode == "auto":
+        mode = "pexels" if key else "ai"
     if mode == "pexels" and not key:
-        log("      no PEXELS_API_KEY in .env -> using free gradient backgrounds")
-        mode = "gradient"
+        log("      no PEXELS_API_KEY in .env -> using free AI images instead")
+        mode = "ai"
     if mode == "image" and not (image and Path(image).exists()):
         raise ValueError(f"background image not found: {image!r}")
     log(f"[3/4] visuals    mode={mode}")

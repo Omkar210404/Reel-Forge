@@ -12,7 +12,7 @@ def main(argv=None) -> int:
     m = sub.add_parser("make", help="make a reel from a script file")
     m.add_argument("--script", required=True, help="plain-text script file")
     m.add_argument("--topic", default="", help="topic, used as a fallback stock-footage search")
-    m.add_argument("--bg", choices=["pexels", "gradient", "image"], help="override background mode")
+    m.add_argument("--bg", choices=["auto", "pexels", "ai", "gradient", "image"], help="override background mode")
     m.add_argument("--image", help="picture for --bg image")
     m.add_argument("--music", help="music file (default: first mp3 in assets/music/)")
     m.add_argument("--voice", help="edge-tts voice name, e.g. en-GB-RyanNeural")

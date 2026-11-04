@@ -11,10 +11,20 @@ height = 1920
 fps = 30
 
 [background]
-mode = "pexels"          # pexels | gradient | image  (pexels falls back to gradient without a key)
-image = ""               # used when mode = "image" (Ken Burns pan/zoom on this picture)
+# auto     = Pexels stock video if PEXELS_API_KEY is set, otherwise free AI images
+# pexels   = stock video per sentence (AI image when a search finds nothing)
+# ai       = free AI image per sentence (Pollinations, no key, ~45 s per image)
+# gradient = animated colour gradients (fully offline, fastest)
+# image    = slow pan/zoom on your own picture
+mode = "auto"
+art_style = "cartoon"    # AI pictures: cartoon (3D Pixar-style, recurring character) | photo
+image = ""
 max_beat_seconds = 6.0   # a new visual starts at least this often
-darken = 0.35            # 0..1, dims stock footage/images so captions stay readable
+darken = 0.2             # 0..1, dims footage/images so captions stay readable
+director_model = "llama3.2:3b"            # local Ollama model that plans each scene; "" = keywords only
+ollama_url = "http://127.0.0.1:11434"
+ai_fallback = true       # in pexels mode, use an AI image when no stock clip matches
+ai_min_interval = 45     # seconds between free AI image requests
 
 [captions]
 style = "highlight"      # highlight (word-by-word colour) | pop (whole phrase pops in)
