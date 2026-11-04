@@ -31,6 +31,7 @@ def run_job(req: dict) -> None:
         cfg = load_config()
         cfg["captions"].update(style=req["style"], words_per_group=int(req["wpg"]),
                                highlight_color=req["hl"])
+        cfg["background"]["art_style"] = req.get("art", "cartoon")
         if not req.get("music"):
             cfg["music"]["folder"] = "__none__"
         make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""),
@@ -146,8 +147,10 @@ video{width:100%;height:100%;display:block}.hint{color:var(--mute);font-size:13p
 <div class="row"><div><label for="topic">Topic (optional)</label><input id="topic" placeholder="e.g. morning habits"></div>
 <div><label for="voice">Voice</label><select id="voice"></select></div></div>
 <div class="row"><div><label for="bg">Background</label><select id="bg">
-<option value="pexels">Pexels stock clips</option><option value="gradient">Animated gradient (free)</option><option value="image">Ken Burns on my picture</option></select></div>
+<option value="auto">Auto: stock video, or AI pictures</option><option value="ai">AI pictures per line (free, slow)</option><option value="pexels">Pexels stock video</option>
+<option value="gradient">Animated gradient (fast, offline)</option><option value="image">Pan &amp; zoom on my picture</option></select></div>
 <div><label for="style">Caption style</label><select id="style"><option value="highlight">Word-by-word highlight</option><option value="pop">Phrase pop-in</option></select></div></div>
+<div class="row"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
 <div class="row"><div><label for="wpg">Words per caption</label><input id="wpg" type="number" min="1" max="8" value="3"></div>
 <div><label for="hl">Highlight colour</label><input id="hl" type="color" value="#ffd60a"></div></div>
 <div id="imgrow" hidden><label for="img">Picture</label><input id="img" type="file" accept="image/*"></div>
@@ -168,11 +171,12 @@ async function load(){info=await (await fetch('/api/info')).json();
  $('reels').innerHTML=info.reels.map(r=>`<a data-r="${r}">${r}</a>`).join('')||'<p class="hint">None yet.</p>';
  document.querySelectorAll('#reels a').forEach(a=>a.onclick=()=>show(a.dataset.r));hint()}
 function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';
- $('bghint').textContent=b==='pexels'&&!info.pexels?'No Pexels key in .env, so gradients will be used instead.':''}
+ const ai='Free AI pictures are limited to about one every 45 s, so a 30 s reel takes ~6 min.';
+ $('bghint').textContent=(b==='auto'||b==='pexels')?(info.pexels?'Pexels key found: real stock video per line.':'No Pexels key in .env. '+ai):b==='ai'?ai:''}
 $('bg').onchange=hint;$('sample').onclick=()=>{$('script').value=info.sample;$('topic').value='morning habits'};
 const readImg=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
 $('go').onclick=async()=>{const body={script:$('script').value,topic:$('topic').value,voice:$('voice').value,bg:$('bg').value,
- style:$('style').value,wpg:$('wpg').value,hl:$('hl').value,music:$('music').checked};
+ style:$('style').value,art:$('art').value,wpg:$('wpg').value,hl:$('hl').value,music:$('music').checked};
  if(body.bg==='image'&&$('img').files[0])body.image=await readImg($('img').files[0]);
  const r=await fetch('/api/make',{method:'POST',body:JSON.stringify(body)});const j=await r.json();
  if(j.error){$('log').innerHTML=`<span class="err">${j.error}</span>`;return}

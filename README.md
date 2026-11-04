@@ -2,7 +2,7 @@
 
 Give it a script, get back a finished vertical (1080x1920) MP4 with a neural voiceover, word-synced animated captions, background visuals that change with the script, and optional ducked music. Everything is free and runs on your machine: no paid APIs.
 
-> **Honest note:** the output is the automated "faceless creator" style: stock clips or gradients, bold captions, a TTS voice. It is clean and consistent, not cinematic, and it does not edit like a human would.
+> **Honest note:** the output is the automated "faceless creator" style: stock clips or AI stills with slow pan/zoom, bold captions, a TTS voice. It is clean and consistent, not cinematic, and it does not edit like a human would.
 
 ```mermaid
 flowchart LR
@@ -12,12 +12,15 @@ flowchart LR
     W --> A
     A --> C[Pillow caption frames<br/>word highlight / pop-in]
     A --> B[beats: one per sentence]
-    B --> P{background}
-    P -->|key set| X[Pexels portrait clips]
-    P -->|free| G[animated gradients]
-    P -->|image| K[Ken Burns on your picture]
+    B --> D[scene director<br/>local Ollama llama3.2]
+    D --> P{background}
+    P -->|Pexels key| X[stock video per line]
+    P -->|no key| AI[free AI picture per line<br/>+ pan/zoom]
+    P -->|offline| G[animated gradients]
+    P -->|image| K[pan/zoom on your picture]
     C --> F[FFmpeg: overlay + mix<br/>voice + ducked music]
     X --> F
+    AI --> F
     G --> F
     K --> F
     F --> O[output/reel.mp4]
@@ -28,8 +31,16 @@ flowchart LR
 1. **Voiceover:** [edge-tts](https://github.com/rany2/edge-tts) speaks the script with a Microsoft neural voice (free, needs internet).
 2. **Timing:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcribes that audio locally with word timestamps. The heard words are diffed against the script, so the captions show *your* spelling and punctuation ("$1,000", not "one thousand dollars") with Whisper's timing.
 3. **Captions:** words are grouped (3 per caption by default, breaking at punctuation) and drawn with Pillow: white text, thick outline, current word highlighted, and a short pop-in when each phrase appears. All frames play as one transparent overlay stream.
-4. **Visuals:** the script is cut into beats (one per sentence, at most 6 s each). Each beat gets a Pexels portrait clip searched with keywords from that sentence, or an animated gradient, or a slow zoom on your image. Clips are scaled to cover 9:16 and centre-cropped.
-5. **Assembly:** FFmpeg overlays the captions, mixes the voice with music that dips while the voice speaks (sidechain compression), and writes H.264/AAC MP4 to `output/`.
+4. **Scene director:** the script is cut into beats (one per sentence, at most 6 s each). A local [Ollama](https://ollama.com) model (`llama3.2:3b`) reads the whole script and, for each line, writes a short stock-video search and a one-sentence picture description of what the viewer should see ("pressure like fifty jumbo jets" becomes `jumbo jets stacked`). If Ollama is not running, it falls back to keywords from the line.
+5. **Visuals** (`mode` in config, `--bg` on the CLI):
+   - `auto` (default): `pexels` if a key is set, otherwise `ai`.
+   - `pexels`: a portrait stock **video** per line from Pexels (free key). If no clip matches, that line gets an AI picture instead.
+   - `ai`: a free AI-generated picture per line from [Pollinations](https://pollinations.ai) (no key), animated with a slow zoom or pan. `art_style = "cartoon"` (default) makes cute 3D Pixar-style scenes. The director first fixes one main character (the script's own, like "a tiny robot", or an invented guide) and describes it the same way in every scene, so the pictures read as one story. `art_style = "photo"` makes realistic shots.
+   - `gradient`: animated colour gradients, fully offline and fastest.
+   - `image`: slow zoom on your own picture.
+
+   Everything is scaled to cover 9:16 and centre-cropped. Downloads are cached in `data/cache/`.
+6. **Assembly:** FFmpeg overlays the captions, mixes the voice with music that dips while the voice speaks (sidechain compression), and writes H.264/AAC MP4 to `output/`.
 
 ## Install
 
@@ -67,7 +78,11 @@ Each run logs the four stages (`voiceover -> captions -> visuals -> assemble`).
 1. Get a free key at <https://www.pexels.com/api/>.
 2. `copy .env.example .env` (or `cp`) and set `PEXELS_API_KEY=...`.
 
-With a key, `mode = "pexels"` (the default) searches portrait clips per sentence, falls back to the topic, and caches downloads in `data/cache/`. Without a key, or if a search finds nothing, that beat uses a gradient instead, so the tool always works for free. The key is only read from `.env` and never printed.
+This gives the best result: real moving footage for each line. With a key, `auto` mode searches a portrait clip per line, using the scene director's query first, then a keyword, then the topic. Without a key, `auto` uses free AI pictures, so the tool still works with zero keys. The key is only read from `.env` and never printed.
+
+## Scene director (optional)
+
+Install [Ollama](https://ollama.com) and run `ollama pull llama3.2:3b` (about 2 GB). ReelForge uses it automatically when it is running. Set `director_model = ""` in `config.toml` to switch it off and use plain keywords.
 
 ## Add music (optional)
 
@@ -75,7 +90,7 @@ Drop a royalty-free `.mp3` into `assets/music/`. The first one (alphabetically) 
 
 ## Config
 
-Everything lives in [`config.toml`](config.toml): voice and speed, Whisper model, resolution/fps, background mode, beat length, footage darkening, caption style (`highlight` or `pop`), words per caption, font, size, colours, outline, vertical position, uppercase, music volume and ducking.
+Everything lives in [`config.toml`](config.toml): voice and speed, Whisper model, resolution/fps, background mode, scene-director model, AI fallback and pacing, beat length, footage darkening, caption style (`highlight` or `pop`), words per caption, font, size, colours, outline, vertical position, uppercase, music volume and ducking.
 
 List voices with `edge-tts --list-voices`.
 
@@ -114,14 +129,16 @@ ReelForge selftest  (gradient background, synthetic music bed, no API keys)
 
 ## Limitations
 
-- **Not cinematic.** Hard cuts between beats, no B-roll matching beyond keyword search, no transitions or sound effects.
-- **Stock matching is keyword-based.** Keywords are the longest non-common words in each sentence, so abstract sentences can get loosely related clips.
+- **Not cinematic, and not real animation.** Hard cuts between beats, no transitions or sound effects. AI mode gives moving *stills* (pan/zoom): characters do not walk, talk or lip-sync. That needs paid image-to-video models (Seedance, Kling and similar) or a large GPU, which this free tool does not use. Only Pexels mode gives real video.
+- **Character consistency is approximate.** The same text description is reused in every scene, but the free image model still draws the character a bit differently each time.
+- **Scene matching is as good as a 3B local model.** It usually picks what the line mentions, but abstract lines ("scientists have found life") can get a loosely related scene. Without Ollama it uses plain keywords, which is weaker.
+- **Free AI pictures are slow and watermarked.** Pollinations' free tier allows about one image per 45 s per IP and returns 576x1024 images (upscaled, so slightly soft) with a small `pollinations.ai` mark in the corner, which ReelForge leaves in place.
 - **Cropping is a centre crop.** Pexels search asks for portrait clips so little gets cut, but a landscape clip's subject can still end up off-centre. There is no subject tracking.
 - **Voiceover needs internet** (edge-tts uses Microsoft's free online service). Whisper, rendering and the gradient/image modes are fully local.
 - **Caption timing depends on Whisper.** On clean TTS audio it is tight, but words Whisper misses get interpolated timings.
 - English-tuned by default (`base.en`); set `whisper_model = "base"` and a matching voice for other languages.
 - Rendering is CPU-only H.264 (`libx264`). On a Ryzen 5 5600H laptop, `samples/script.txt` (27 s of speech) took about 75 s end to end.
-- The Pexels path has been tested only for its fallback (a bad key switches to gradients); it has not been run with a real key yet.
+- The Pexels path has been tested only for its fallback (a bad key switches to other visuals); it has not been run with a real key yet.
 - Ducking has been tested with a generated tone (selftest), not judged by ear on real music tracks.
 - Very long sentences are split every 6 s, which can leave a short (about 1 s) final beat.
 
