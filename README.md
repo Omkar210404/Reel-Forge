@@ -85,6 +85,16 @@ Each run logs the four stages (`voiceover -> captions -> visuals -> assemble`).
 
 This mode makes real animation: characters that move, walk, wave and react, rendered as 3D cartoon (toon shading) from code.
 
+**Direct (one click):** if [Claude Code](https://claude.com/claude-code) is installed and logged in, leave the HTML out and ReelForge runs `claude -p` with the prompt in an empty temp folder, saves Claude's animation next to the video (`output/<name>.html`) and renders it. It uses your own Claude plan; no API key. Writing the animation took about 8 minutes for the 26-second `samples/rag.txt` reel.
+
+```bash
+reelforge make --script samples/rag.txt --topic "RAG explained" --bg html
+```
+
+In the web app: choose **3D cartoon animation by Claude**, leave the HTML box empty and press **Make reel**.
+
+**Manual (claude.ai):**
+
 1. Write your script (one sentence = one scene).
 2. Get the prompt: `reelforge prompt --script my.txt --topic "space"`, or press **Copy Claude prompt** in the web app.
 3. Paste it into Claude (claude.ai or Claude Code) and save its reply as `my-animation.html`. You can open that file in a browser to preview it.
@@ -156,7 +166,7 @@ ReelForge selftest  (gradient background, synthetic music bed, no API keys)
 
 ## Limitations
 
-- **Animation quality depends on the HTML.** The 3D cartoon mode is only as good as the animation Claude writes. Simple primitive-built characters, no lip-sync. If Claude breaks the `renderFrame` rule, ReelForge stops with a clear error, and you ask Claude to fix it. The included demo was hand-written to the same rules; a reply from claude.ai to the generated prompt has not been tested in this repo yet.
+- **Animation quality depends on the HTML.** The 3D cartoon mode is only as good as the animation Claude writes. Simple primitive-built characters, no lip-sync. If Claude breaks the `renderFrame` rule, ReelForge stops with a clear error, and you ask Claude to fix it. The included demo was hand-written to the same rules; Claude Code's reply to the generated prompt has been rendered end to end (`samples/rag.txt`); framing and polish vary from run to run.
 - **Not cinematic.** Hard cuts between beats, no transitions or sound effects. AI-picture mode gives moving *stills* (pan/zoom), not real motion. Only the 3D cartoon mode and Pexels mode have real movement.
 - **Character consistency is approximate.** The same text description is reused in every scene, but the free image model still draws the character a bit differently each time.
 - **Scene matching is as good as a 3B local model.** It usually picks what the line mentions, but abstract lines ("scientists have found life") can get a loosely related scene. Without Ollama it uses plain keywords, which is weaker.

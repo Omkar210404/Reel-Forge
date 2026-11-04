@@ -23,7 +23,7 @@ lock = threading.Lock()
 def run_job(req: dict) -> None:
     try:
         image = html = None
-        if req.get("bg") == "html":
+        if req.get("bg") == "html" and req.get("html", "").strip():
             html = ROOT / "data" / "ui_animation.html"
             html.parent.mkdir(parents=True, exist_ok=True)
             html.write_text(req["html"], encoding="utf-8")
@@ -39,9 +39,11 @@ def run_job(req: dict) -> None:
         cfg["background"]["art_style"] = req.get("art", "cartoon")
         if not req.get("music"):
             cfg["music"]["folder"] = "__none__"
-        make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""),
+        rep = make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""),
              image=str(image) if image else None, html=str(html) if html else None, voice_name=req["voice"], cfg=cfg,
              log=lambda s: job["log"].append(s))
+        if rep.get("html") and not html:  # Claude wrote it: show it in the page
+            job["html"] = Path(rep["html"]).read_text(encoding="utf-8")
         job["file"] = name
     except Exception as e:
         job["error"] = f"{type(e).__name__}: {e}"
@@ -110,12 +112,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "Paste a script first."}, 400)
         if req.get("bg") == "image" and not req.get("image"):
             return self._json({"error": "Choose a picture for the image background."}, 400)
-        if req.get("bg") == "html" and (problem := check_html(req.get("html", ""))):
+        if req.get("bg") == "html" and req.get("html", "").strip() and (problem := check_html(req["html"])):
             return self._json({"error": problem}, 400)
         with lock:
             if job["running"]:
                 return self._json({"error": "A reel is already being made."}, 409)
-            job.update(running=True, log=[], file=None, error=None)
+            job.update(running=True, log=[], file=None, error=None, html=None)
         threading.Thread(target=run_job, args=(req,), daemon=True).start()
         self._json({"ok": True})
 
@@ -166,10 +168,10 @@ video{width:100%;height:100%;display:block}.hint{color:var(--mute);font-size:13p
 <div class="row" id="artrow"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
 <div class="row"><div><label for="wpg">Words per caption</label><input id="wpg" type="number" min="1" max="8" value="3"></div>
 <div><label for="hl">Highlight colour</label><input id="hl" type="color" value="#ffd60a"></div></div>
-<div id="htmlrow"><p class="hint"><b>1.</b> Paste your script above. <b>2.</b> <button class="ghost sm" id="cp">Copy Claude prompt</button>
-and paste it into <a href="https://claude.ai/new" target="_blank" rel="noopener" style="color:var(--acc)">claude.ai</a> (not here).
-<b>3.</b> Copy the HTML file Claude replies with and paste it below. <button class="ghost sm" id="demo">Load demo</button></p>
-<label for="html">Claude's animation HTML</label><textarea id="html" class="code" placeholder="<!doctype html> ... (from Claude)"></textarea></div>
+<div id="htmlrow"><p class="hint"><b>Direct:</b> leave the box below empty and press <b>Make reel</b>. ReelForge asks Claude Code on this PC to write the animation (your Claude plan, no API key, about 5-10 min extra).<br>
+<b>Or manual:</b> <button class="ghost sm" id="cp">Copy Claude prompt</button> paste it into <a href="https://claude.ai/new" target="_blank" rel="noopener" style="color:var(--acc)">claude.ai</a>, then paste Claude's HTML reply below.
+<button class="ghost sm" id="demo">Load demo</button></p>
+<label for="html">Claude's animation HTML</label><textarea id="html" class="code" placeholder="Leave empty: Claude Code writes it for you. Or paste the HTML file from claude.ai here."></textarea></div>
 <div id="imgrow" hidden><label for="img">Picture</label><input id="img" type="file" accept="image/*"></div>
 <div class="chk"><input id="music" type="checkbox" checked><span id="musiclbl">Background music</span></div>
 <p class="hint" id="bghint"></p>
@@ -209,6 +211,6 @@ async function poll(){const s=await (await fetch('/api/status')).json();
  $('log').textContent=s.log.join('\n')||'Starting...';$('log').scrollTop=1e9;
  if(s.running)return setTimeout(poll,800);$('go').disabled=false;
  if(s.error)$('log').innerHTML+=`\n<span class="err">${s.error.replace(/</g,'&lt;')}</span>`;
- if(s.file){show(s.file);load()}}
+ if(s.html)$('html').value=s.html;if(s.file){show(s.file);load()}}
 load();
 </script></body></html>"""
