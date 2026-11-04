@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>RAG Explained - Bolt the Robot</title>
+<style>
+  html,body{margin:0;padding:0;overflow:hidden;background:#000;width:100%;height:100%;}
+  canvas{display:block;}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+
+/* ---------- REEL timing ---------- */
+if (!window.REEL) {
+  const lines = [
+    "Meet Bolt, a tiny robot who answers questions.",
+    "But Bolt only knows what it learned long ago.",
+    "So when someone asks about today, Bolt just guesses.",
+    "Then Bolt gets a magic library card.",
+    "Now, before answering, Bolt runs into the library and grabs the right books.",
+    "It reads the pages, then answers with real facts.",
+    "That is RAG: retrieve first, then generate.",
+    "Smarter answers, fewer made-up ones."
+  ];
+  const each = 3;
+  window.REEL = {
+    duration: lines.length * each,
+    scenes: lines.map((text, i) => ({ start: i * each, end: (i + 1) * each, text }))
+  };
+}
+const REEL = window.REEL;
+
+/* ---------- helpers ---------- */
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp01(x) { return Math.min(1, Math.max(0, x)); }
+function easeInOut(u) { u = clamp01(u); return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; }
+function sceneAt(t) {
+  const d = REEL.duration;
+  let tt = t % d; if (tt < 0) tt += d;
+  const scenes = REEL.scenes;
+  for (let i = 0; i < scenes.length; i++) {
+    const s = scenes[i];
+    if (tt >= s.start && tt < s.end) return { index: i, u: clamp01((tt - s.start) / (s.end - s.start)) };
+  }
+  const last = scenes[scenes.length - 1];
+  return { index: scenes.length - 1, u: 1 };
+}
+
+/* ---------- renderer / scene / camera ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8ad1ff);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 1.4, 5);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- lights ---------- */
+const keyLight = new THREE.DirectionalLight(0xfff0d2, 1.4);
+keyLight.position.set(3.5, 6, 5);
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x8fc8ff, 0.7);
+rimLight.position.set(-4, 3, -5);
+scene.add(rimLight);
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x454566, 0.65);
+scene.add(hemi);
+
+/* ---------- toon gradient ---------- */
+function createToonGradient() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 4; canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  const steps = [70, 150, 210, 255];
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = `rgb(${steps[i]},${steps[i]},${steps[i]})`;
+    ctx.fillRect(i, 0, 1, 1);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+const gradMap = createToonGradient();
+function toonMat(color, opts) {
+  return new THREE.MeshToonMaterial(Object.assign({ color, gradientMap: gradMap }, opts || {}));
+}
+
+scene.fog = new THREE.Fog(0x8ad1ff, 6, 17);
+
+/* ---------- ground ---------- */
+const groundGeo = new THREE.CylinderGeometry(6.5, 6.5, 0.3, 48);
+const groundMat = toonMat(0x6bd46b);
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.position.y = -0.15;
+scene.add(ground);
+
+/* ================= BOLT THE ROBOT ================= */
+const bolt = new THREE.Group();
+scene.add(bolt);
+
+const bodyColor = 0x4aa8f0;
+const accentColor = 0xffa726;
+const darkColor = 0x2b3340;
+
+// legs
+function makeLeg() {
+  const pivot = new THREE.Group();
+  const legMat = toonMat(bodyColor);
+  const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.28, 6, 12), legMat);
+  leg.position.y = -0.22;
+  pivot.add(leg);
+  const foot = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), toonMat(darkColor));
+  foot.position.y = -0.4;
+  foot.scale.set(1.2, 0.7, 1.3);
+  pivot.add(foot);
+  return pivot;
+}
+const legL = makeLeg(); legL.position.set(-0.16, 0.35, 0); bolt.add(legL);
+const legR = makeLeg(); legR.position.set(0.16, 0.35, 0); bolt.add(legR);
+
+// body
+const bodyMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.34, 8, 20), toonMat(bodyColor));
+bodyMesh.position.y = 0.68;
+bolt.add(bodyMesh);
+
+const chest = new THREE.Mesh(new THREE.CircleGeometry(0.16, 24), toonMat(accentColor));
+chest.position.set(0, 0.68, 0.33);
+bolt.add(chest);
+
+// arms
+function makeArm() {
+  const pivot = new THREE.Group();
+  const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.26, 6, 12), toonMat(bodyColor));
+  arm.position.y = -0.2;
+  pivot.add(arm);
+  const hand = new THREE.Group();
+  hand.position.y = -0.38;
+  const handMesh = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), toonMat(accentColor));
+  hand.add(handMesh);
+  pivot.add(hand);
+  pivot.hand = hand;
+  return pivot;
+}
+const armL = makeArm(); armL.position.set(-0.4, 0.85, 0); bolt.add(armL);
+const armR = makeArm(); armR.position.set(0.4, 0.85, 0); bolt.add(armR);
+const handL = armL.hand, handR = armR.hand;
+
+// head
+const headPivot = new THREE.Group();
+headPivot.position.set(0, 1.12, 0);
+bolt.add(headPivot);
+
+const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 32, 32), toonMat(bodyColor));
+headPivot.add(headMesh);
+
+// antenna
+const antennaStalk = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.22, 8), toonMat(darkColor));
+antennaStalk.position.set(0, 0.52, 0);
+headPivot.add(antennaStalk);
+const antennaTipMat = toonMat(0xffe066, { emissive: new THREE.Color(0xffcf33), emissiveIntensity: 0.6 });
+const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 16), antennaTipMat);
+antennaTip.position.set(0, 0.64, 0);
+headPivot.add(antennaTip);
+
+// eyes
+function makeEye(x) {
+  const g = new THREE.Group();
+  g.position.set(x, 0.03, 0.33);
+  const white = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 20), toonMat(0xffffff));
+  g.add(white);
+  const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 16), toonMat(0x1b1f2a));
+  pupil.position.z = 0.09;
+  g.add(pupil);
+  const hl = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 10), toonMat(0xffffff));
+  hl.position.set(-0.035, 0.045, 0.14);
+  g.add(hl);
+  const lid = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 20), toonMat(bodyColor));
+  lid.scale.set(1, 0.05, 0.6);
+  lid.position.set(0, 0.1, 0.02);
+  g.add(lid);
+  g.lid = lid;
+  g.pupil = pupil;
+  return g;
+}
+const eyeL = makeEye(-0.17); headPivot.add(eyeL);
+const eyeR = makeEye(0.17); headPivot.add(eyeR);
+
+// mouth
+const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 8, 16, Math.PI), toonMat(0x1b1f2a));
+mouth.position.set(0, -0.16, 0.36);
+mouth.rotation.z = Math.PI;
+headPivot.add(mouth);
+
+/* ================= PROP GROUPS ================= */
+const allPropGroups = [];
+function addProp(g) { scene.add(g); g.visible = false; allPropGroups.push(g); return g; }
+
+/* Scene 0: park */
+const parkProps = addProp(new THREE.Group());
+[[-1.5, 0, -1.1, 0.35], [1.6, 0, -1.3, 0.3], [0.9, 0, -0.6, 0.22]].forEach(([x, y, z, r]) => {
+  const bush = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), toonMat(0x3fae53));
+  bush.position.set(x, r * 0.8, z);
+  parkProps.add(bush);
+});
+const sun = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20), toonMat(0xffe066, { emissive: new THREE.Color(0xffd23f), emissiveIntensity: 0.5 }));
+sun.position.set(2.6, 4, -6);
+parkProps.add(sun);
+
+/* Scene 1: clock of old knowledge */
+const clockProp = addProp(new THREE.Group());
+clockProp.position.set(0, 2.05, -0.25);
+clockProp.scale.setScalar(0.55);
+const clockRing = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.045, 10, 24), toonMat(0xd8b36a));
+clockProp.add(clockRing);
+const clockFace = new THREE.Mesh(new THREE.CircleGeometry(0.3, 24), toonMat(0xf3e6c4));
+clockFace.position.z = 0.02;
+clockProp.add(clockFace);
+const hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.18, 0.02), toonMat(0x3a3a3a));
+hourHand.position.set(0, 0.08, 0.04); hourHand.geometry.translate(0, 0.08, 0);
+clockProp.add(hourHand);
+const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.26, 0.02), toonMat(0x3a3a3a));
+minHand.position.set(0, 0.1, 0.05); minHand.geometry.translate(0, 0.1, 0);
+clockProp.add(minHand);
+
+/* Scene 2: calendar + confusion sparks */
+const calendarProps = addProp(new THREE.Group());
+const calBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.58, 0.05), toonMat(0xf0f0f0));
+calendarProps.add(calBox);
+const calTop = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.06), toonMat(0xe05c5c));
+calTop.position.y = 0.23;
+calendarProps.add(calTop);
+for (let i = 0; i < 3; i++) {
+  const line = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.015, 0.01), toonMat(0xb9b9c9));
+  line.position.set(0, 0.05 - i * 0.12, 0.03);
+  calendarProps.add(line);
+}
+const sparks = [];
+for (let i = 0; i < 4; i++) {
+  const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), toonMat(0xffe066));
+  calendarProps.add(s);
+  sparks.push(s);
+}
+
+/* Scene 3: magic card + sparkles (card lives on hand) */
+const cardMat = toonMat(0xffd84a, { emissive: new THREE.Color(0xffb400), emissiveIntensity: 0.4 });
+const cardProp = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.24, 0.025), cardMat);
+cardProp.visible = false;
+handR.add(cardProp);
+const cardSparkles = [];
+const cardSparkleGroup = addProp(new THREE.Group());
+for (let i = 0; i < 6; i++) {
+  const sp = new THREE.Mesh(new THREE.IcosahedronGeometry(0.035, 0), toonMat(0xfff0b0));
+  cardSparkleGroup.add(sp);
+  cardSparkles.push(sp);
+}
+
+/* Scene 4: library bookshelf wall */
+const libraryProps = addProp(new THREE.Group());
+const shelfFrame = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.2, 0.25), toonMat(0x6b4a30));
+shelfFrame.position.set(0, 1.3, -2.6);
+libraryProps.add(shelfFrame);
+const bookColors = [0xe05c5c, 0x4aa8f0, 0xffd84a, 0x5fcf7a, 0xaf7ac5, 0xff9f43];
+let bc = 0;
+for (let row = 0; row < 3; row++) {
+  for (let col = 0; col < 7; col++) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.42, 0.18), toonMat(bookColors[bc % bookColors.length]));
+    b.position.set(-1.95 + col * 0.65, 0.65 + row * 0.6, -2.42);
+    b.rotation.z = ((bc % 5) - 2) * 0.03;
+    libraryProps.add(b);
+    bc++;
+  }
+}
+// grabbed book attached to hand (used scene 4 late + scene 5)
+const bookHandGroup = new THREE.Group();
+handR.add(bookHandGroup);
+const bookPageL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.015), toonMat(0xf3ecd8));
+bookPageL.position.set(-0.1, 0, 0);
+bookPageL.geometry.translate(0.1, 0, 0);
+const bookPageR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.015), toonMat(0xf3ecd8));
+bookPageR.position.set(0.1, 0, 0);
+bookPageR.geometry.translate(-0.1, 0, 0);
+const bookCover = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.03), toonMat(0xe05c5c));
+bookCover.position.z = -0.02;
+bookHandGroup.add(bookCover, bookPageL, bookPageR);
+bookHandGroup.visible = false;
+
+/* Scene 5: fact orbs + reading glow */
+const readingProps = addProp(new THREE.Group());
+const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 20), toonMat(0xffe9b0, { emissive: new THREE.Color(0xffcf6b), emissiveIntensity: 0.5 }));
+lampGlow.position.set(-1.6, 2.1, -1.0);
+readingProps.add(lampGlow);
+const factOrbs = [];
+const factOrbGroup = new THREE.Group();
+scene.add(factOrbGroup);
+for (let i = 0; i < 5; i++) {
+  const o = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 12), toonMat(0x9be7ff, { emissive: new THREE.Color(0x6fd6ff), emissiveIntensity: 0.6 }));
+  factOrbGroup.add(o);
+  factOrbs.push(o);
+}
+factOrbGroup.visible = false;
+allPropGroups.push(factOrbGroup);
+
+/* Scene 6: RAG flow props */
+const flowProps = addProp(new THREE.Group());
+const flowBook = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.1), toonMat(0xe05c5c));
+flowBook.position.set(-1.05, 1.0, 0.5);
+flowProps.add(flowBook);
+const flowArrow = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 16), toonMat(0xffe066));
+flowArrow.position.set(0, 1.0, 0.5);
+flowArrow.rotation.z = -Math.PI / 2;
+flowProps.add(flowArrow);
+const bulbGlass = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 20), toonMat(0xfff6d0, { emissive: new THREE.Color(0xffe27a), emissiveIntensity: 0.55 }));
+bulbGlass.position.set(1.05, 1.05, 0.5);
+flowProps.add(bulbGlass);
+const bulbBase = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.12, 12), toonMat(0x9aa0ad));
+bulbBase.position.set(1.05, 0.85, 0.5);
+flowProps.add(bulbBase);
+
+/* Scene 7: confetti */
+const confettiProps = addProp(new THREE.Group());
+const confettiColors = [0xe05c5c, 0x4aa8f0, 0xffd84a, 0x5fcf7a, 0xaf7ac5, 0xff9f43];
+const confetti = [];
+for (let i = 0; i < 26; i++) {
+  const c = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), toonMat(confettiColors[i % confettiColors.length]));
+  confettiProps.add(c);
+  confetti.push({ mesh: c, seed: i * 0.9137 + 1 });
+}
+
+/* ---------- scene palette ---------- */
+const palette = [
+  { bg: 0x8ad1ff, ground: 0x6bd46b },
+  { bg: 0xcdb699, ground: 0x8d7657 },
+  { bg: 0xb0b0c4, ground: 0x97a0ad },
+  { bg: 0x6a3fb5, ground: 0x9b6fd1 },
+  { bg: 0x4a3a66, ground: 0x5c4433 },
+  { bg: 0xffd9a0, ground: 0xd79b5e },
+  { bg: 0x5fb3e0, ground: 0x4fae6b },
+  { bg: 0xffe066, ground: 0xff8fb3 }
+];
+const bgColor = new THREE.Color();
+const groundColor = new THREE.Color();
+
+/* ---------- camera base ---------- */
+const CAM_LOOK_Y = 0.42;
+const CAM_HEIGHT = 1.05;
+const CAM_DIST = 4.9;
+
+function setCamera(dist, azimuth, height, lookY, lookX, lookZ) {
+  camera.position.set(Math.sin(azimuth) * dist, height, Math.cos(azimuth) * dist);
+  camera.lookAt(lookX || 0, lookY, lookZ || 0);
+}
+
+/* ---------- blink / breathing ---------- */
+function applyIdle(t) {
+  const breathe = Math.sin(t * 2.1);
+  bodyMesh.scale.set(1 - breathe * 0.015, 1 + breathe * 0.03, 1 - breathe * 0.015);
+
+  const cyclePos = t % 2.6;
+  let openness = 1;
+  if (cyclePos > 2.35) {
+    const p = (cyclePos - 2.35) / 0.25;
+    openness = 1 - Math.sin(Math.min(p, 1) * Math.PI);
+  }
+  const lidScale = lerp(1, 0.05, openness);
+  eyeL.lid.scale.y = lidScale;
+  eyeR.lid.scale.y = lidScale;
+}
+
+/* ---------- main pose function ---------- */
+function hideAllProps() {
+  for (const g of allPropGroups) g.visible = false;
+  cardProp.visible = false;
+  bookHandGroup.visible = false;
+}
+
+function resetPose() {
+  bolt.position.set(0, 0, 0);
+  bolt.rotation.set(0, 0, 0);
+  headPivot.rotation.set(0, 0, 0);
+  armL.rotation.set(0, 0, 0);
+  armR.rotation.set(0, 0, 0);
+  legL.rotation.set(0, 0, 0);
+  legR.rotation.set(0, 0, 0);
+  mouth.scale.set(1, 1, 1);
+}
+
+function poseScene(index, u, t) {
+  const p = palette[index];
+  bgColor.setHex(p.bg);
+  groundColor.setHex(p.ground);
+  scene.background.copy(bgColor);
+  scene.fog.color.copy(bgColor);
+  ground.material.color.copy(groundColor);
+
+  const e = easeInOut(u);
+
+  if (index === 0) {
+    parkProps.visible = true;
+    const wave = Math.sin(t * 6) * 0.5;
+    armR.rotation.z = -1.9 + wave * 0.35;
+    armR.rotation.x = -0.3;
+    armL.rotation.z = 0.15 + Math.sin(t * 2) * 0.05;
+    headPivot.rotation.y = Math.sin(t * 1.3) * 0.12;
+    bolt.position.y = Math.sin(t * 3) * 0.015;
+    setCamera(lerp(5.4, 4.7, e), lerp(-0.35, 0, e), CAM_HEIGHT, CAM_LOOK_Y);
+  }
+
+  else if (index === 1) {
+    clockProp.visible = true;
+    clockProp.position.y = 2.05 + Math.sin(t * 1.6) * 0.04;
+    hourHand.rotation.z = -t * 0.3;
+    minHand.rotation.z = -t * 0.9;
+    headPivot.rotation.x = -0.18 - Math.sin(t * 1.2) * 0.03;
+    armL.rotation.z = 0.9 + Math.sin(t * 2) * 0.05;
+    armL.rotation.x = -0.4;
+    armR.rotation.z = 0.1;
+    bolt.rotation.y = lerp(-0.2, 0.15, e);
+    setCamera(4.9, lerp(-0.5, -0.1, e), 1.2, 0.7);
+  }
+
+  else if (index === 2) {
+    calendarProps.visible = true;
+    calendarProps.position.set(0.95, 1.35 + Math.sin(t * 2.2) * 0.05, -0.1);
+    calendarProps.rotation.z = Math.sin(t * 3) * 0.08;
+    sparks.forEach((s, i) => {
+      const a = t * 2.4 + i * (Math.PI * 2 / sparks.length);
+      s.position.set(Math.cos(a) * 0.55, 0.35 + Math.sin(a * 1.7) * 0.2, 0.3 + Math.sin(a) * 0.3);
+      s.rotation.set(t * 2 + i, t * 1.5, 0);
+    });
+    const shrug = Math.sin(t * 5);
+    armL.rotation.z = 1.4 + shrug * 0.08;
+    armR.rotation.z = -1.4 - shrug * 0.08;
+    armL.rotation.x = -0.5;
+    armR.rotation.x = -0.5;
+    headPivot.rotation.z = Math.sin(t * 4) * 0.1;
+    mouth.scale.set(0.8, 1.3, 1);
+    setCamera(lerp(4.6, 5.1, Math.sin(e * Math.PI)), 0.15, CAM_HEIGHT, CAM_LOOK_Y);
+  }
+
+  else if (index === 3) {
+    const toHand = easeInOut(clamp01(u * 1.3));
+    cardProp.visible = true;
+    cardProp.position.set(lerp(1.8, 0, toHand), lerp(2.6, 0.12, toHand), lerp(-1.5, 0.12, toHand));
+    cardProp.rotation.set(0, t * (1 - toHand) * 3, lerp(2.4, 0, toHand));
+    cardSparkleGroup.visible = true;
+    cardSparkles.forEach((s, i) => {
+      const a = t * 3 + i * (Math.PI * 2 / cardSparkles.length);
+      s.position.set(0.4 + Math.cos(a) * 0.3, 0.55 + Math.sin(a) * 0.3, 0.25 + Math.sin(a * 1.3) * 0.2);
+    });
+    armR.rotation.x = -0.9;
+    armR.rotation.z = -0.5;
+    armL.rotation.z = 0.2;
+    headPivot.rotation.y = -0.2;
+    headPivot.rotation.x = -0.1;
+    antennaTipMat.emissiveIntensity = 0.6 + Math.sin(t * 8) * 0.4 + e * 0.5;
+    setCamera(lerp(5.2, 4.5, e), lerp(0.3, -0.15, e), 1.15, 0.55);
+  }
+
+  else if (index === 4) {
+    libraryProps.visible = true;
+    const run = Math.sin(t * 10);
+    legL.rotation.x = run * 0.9;
+    legR.rotation.x = -run * 0.9;
+    armL.rotation.x = -run * 0.7;
+    armR.rotation.x = run * 0.7;
+    bolt.position.x = lerp(-0.6, 0.35, e);
+    bolt.position.y = Math.abs(run) * 0.06;
+    bolt.rotation.y = lerp(-0.25, 0, e) ;
+    headPivot.rotation.y = -bolt.rotation.y * 0.5;
+    if (u > 0.62) {
+      bookHandGroup.visible = true;
+      armR.rotation.x = -1.1;
+      armR.rotation.z = -0.3;
+    }
+    setCamera(lerp(5.3, 4.8, e), lerp(-0.3, -0.05, e), 1.1, CAM_LOOK_Y, lerp(-0.6, 0.35, e) * 0.4);
+  }
+
+  else if (index === 5) {
+    readingProps.visible = true;
+    bookHandGroup.visible = true;
+    bolt.position.y = -0.1;
+    legL.rotation.x = -1.1;
+    legR.rotation.x = -1.1;
+    armR.rotation.x = -1.15;
+    armR.rotation.z = -0.25;
+    armL.rotation.x = lerp(-1.0, -1.8, clamp01((u - 0.55) / 0.45));
+    armL.rotation.z = lerp(0.3, 0.9, clamp01((u - 0.55) / 0.45));
+    const openAmt = clamp01(u / 0.3);
+    bookPageL.rotation.y = lerp(0, 0.5, openAmt);
+    bookPageR.rotation.y = lerp(0, -0.5, openAmt);
+    factOrbGroup.visible = true;
+    factOrbs.forEach((o, i) => {
+      const cyc = (t * 0.6 + i / factOrbs.length) % 1;
+      o.position.set(0.25 + Math.sin(i * 2 + t) * 0.06, lerp(0.1, 1.1, cyc), 0.35);
+      o.scale.setScalar(1 - cyc * 0.5);
+    });
+    headPivot.rotation.x = lerp(0.25, -0.1, clamp01((u - 0.4) / 0.6));
+    mouth.scale.set(1, lerp(1, 1.4, Math.max(0, Math.sin(u * Math.PI * 4)) * (u > 0.6 ? 1 : 0)), 1);
+    setCamera(lerp(5.1, 4.6, e), lerp(0.2, -0.1, e), 1.0, 0.35);
+  }
+
+  else if (index === 6) {
+    flowProps.visible = true;
+    const point1 = clamp01(u / 0.5);
+    const point2 = clamp01((u - 0.5) / 0.5);
+    flowBook.rotation.y = t * 0.8;
+    flowArrow.position.x = 0 + Math.sin(t * 3) * 0.04;
+    bulbGlass.material.emissiveIntensity = 0.4 + Math.max(0, Math.sin(point2 * Math.PI)) * 0.6 + point2 * 0.3;
+    armL.rotation.x = -0.6 * easeInOut(point1) * (1 - point2 * 0.3);
+    armL.rotation.z = 0.9 * easeInOut(point1);
+    armR.rotation.x = -0.6 * easeInOut(point2);
+    armR.rotation.z = -0.9 * easeInOut(point2);
+    headPivot.rotation.y = lerp(-0.3, 0.3, e);
+    const ang = lerp(-0.4, 0.4, e);
+    setCamera(5.6, ang, 1.3, 0.75, 0, 0.5);
+  }
+
+  else if (index === 7) {
+    confettiProps.visible = true;
+    confetti.forEach((c) => {
+      const period = 2.2 + (c.seed % 1);
+      const phase = (t + c.seed * 3) % period;
+      const y = 3.2 - (phase / period) * 3.4;
+      c.mesh.position.set(Math.sin(c.seed * 7) * 2.0, y, Math.cos(c.seed * 5) * 1.2 - 0.3);
+      c.mesh.rotation.set(t * 2 + c.seed, t * 3, c.seed);
+    });
+    const jump = Math.abs(Math.sin(t * 5));
+    bolt.position.y = jump * 0.32;
+    const tuck = clamp01(jump * 1.4 - 0.3);
+    legL.rotation.x = -tuck * 0.8;
+    legR.rotation.x = -tuck * 0.8;
+    armL.rotation.z = 2.4 - tuck * 0.3;
+    armR.rotation.z = -2.4 + tuck * 0.3;
+    headPivot.rotation.z = Math.sin(t * 5) * 0.1;
+    mouth.scale.set(1.2, 1.5, 1);
+    setCamera(lerp(4.6, 5.1, e), Math.sin(t * 0.6) * 0.3, 1.15, 0.5);
+  }
+}
+
+/* ---------- renderFrame ---------- */
+window.renderFrame = function (t) {
+  resetPose();
+  hideAllProps();
+  const { index, u } = sceneAt(t);
+  poseScene(index, u, t);
+  applyIdle(t);
+  renderer.render(scene, camera);
+};
+
+window.REEL_READY = true;
+
+/* ---------- preview loop ---------- */
+if (!window.REEL_CAPTURE) {
+  const start = performance.now();
+  function tick() {
+    const elapsed = ((performance.now() - start) / 1000) % REEL.duration;
+    window.renderFrame(elapsed);
+    requestAnimationFrame(tick);
+  }
+  tick();
+} else {
+  window.renderFrame(0);
+}
+</script>
+</body>
+</html>

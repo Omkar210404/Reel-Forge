@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ReelForge</title>
+<meta name="description" content="Topic or script in, 9:16 reel out. Claude writes the script and a 3D cartoon with talking characters; ReelForge adds voices, word-synced captions and music, rendered locally with FFmpeg.">
+<style>
+:root{--bg:#0b0d12;--panel:#141821;--line:#242a36;--text:#e9ecf2;--mute:#8d95a7;--acc:#ffd60a;--acc2:#5ce1e6;--orange:#d97757}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--acc)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+nav{display:flex;justify-content:space-between;align-items:center;padding:18px 0}
+.logo{font-weight:800;font-size:20px;color:var(--text);text-decoration:none}.logo span{color:var(--acc)}
+nav .links a{color:var(--mute);text-decoration:none;margin-left:18px;font-size:14px}nav .links a:hover{color:var(--text)}
+.hero{padding:56px 0 40px;display:grid;grid-template-columns:1.2fr .8fr;gap:40px;align-items:center}
+.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.08;margin:0 0 16px}
+.hero h1 em{font-style:normal;color:var(--acc)}
+.hero p{color:var(--mute);font-size:18px;margin:0 0 26px;max-width:560px}
+.btn{display:inline-block;padding:12px 20px;border-radius:10px;font-weight:700;text-decoration:none;margin:0 10px 10px 0}
+.btn.main{background:var(--acc);color:#111}.btn.ghost{border:1px solid var(--line);color:var(--text)}
+.pill{display:inline-block;font-size:12px;color:var(--acc2);border:1px solid #1f4a50;border-radius:99px;padding:3px 10px;margin-bottom:16px}
+.phone{position:relative;aspect-ratio:9/16;border-radius:22px;overflow:hidden;background:#000;border:6px solid #1b2030;box-shadow:0 20px 60px #0008}
+.phone video,.phone iframe,.phone img{width:100%;height:100%;display:block;border:0;object-fit:cover}
+.hero .phone{max-width:300px;justify-self:center;width:100%}
+section{padding:56px 0;border-top:1px solid var(--line)}
+h2{font-size:30px;margin:0 0 8px}.sub{color:var(--mute);margin:0 0 30px;max-width:720px}
+.reels{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+.reel figcaption{margin-top:12px;font-size:14px;color:var(--mute)}.reel figcaption b{color:var(--text);display:block;font-size:15px}
+figure{margin:0}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:6px;margin-bottom:6px}
+.tag.claude{background:#3a2218;color:#ffb08f}.tag.hand{background:#1f2a3d;color:#9cc3ff}
+.live{display:grid;grid-template-columns:repeat(2,minmax(0,330px));gap:30px}
+.load{position:absolute;inset:0;display:grid;place-items:center;background:#000a;cursor:pointer;color:var(--text);font-weight:700;text-align:center;padding:20px}
+.load span{background:var(--acc);color:#111;border-radius:10px;padding:12px 18px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:s}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+.step:before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#2a2410;color:var(--acc);font-weight:800;margin-bottom:8px}
+.step h3{margin:0 0 6px;font-size:17px}.step p{margin:0;color:var(--mute);font-size:14.5px}
+.movie{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;font:14px/1.7 Consolas,monospace;overflow-x:auto}
+.movie .n{color:var(--acc)}.movie .a{color:var(--acc2)}.movie .c{color:#ff9f43}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+pre{background:#07090d;border:1px solid var(--line);border-radius:12px;padding:16px;overflow-x:auto;font:13.5px/1.6 Consolas,monospace;color:#cfd6e4;margin:0}
+ul.plain{padding-left:18px;color:var(--mute)}ul.plain li{margin:6px 0}ul.plain b{color:var(--text)}
+.shot{border-radius:14px;border:1px solid var(--line);max-width:100%;display:block}
+.cols>div,.hero>div,.reels>*,.live>*{min-width:0}
+nav{flex-wrap:wrap;gap:6px}
+footer{border-top:1px solid var(--line);padding:30px 0 50px;color:var(--mute);font-size:14px}
+@media (max-width:900px){.hero{grid-template-columns:1fr}.reels{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.live{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.reels,.steps,.live{grid-template-columns:1fr}.reel,.live figure{max-width:330px;margin:0 auto;width:100%}nav .links a{margin-left:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><a class="logo" href="#">Reel<span>Forge</span></a>
+<div class="links"><a href="#reels">Demos</a><a href="#live">Live 3D</a><a href="#how">How it works</a><a href="https://github.com/Omkar210404/Reel-Forge">GitHub</a></div></nav>
+
+<header class="hero">
+<div>
+<span class="pill">Open source &middot; runs on your PC &middot; no API keys</span>
+<h1>Topic in.<br><em>3D cartoon reel</em> out.</h1>
+<p>Claude writes the script and builds the animation as code. ReelForge gives every character a voice, times captions to each spoken word, records the 3D scene frame by frame and hands you a finished 1080x1920 MP4 under 90 seconds.</p>
+<a class="btn main" href="#reels">Watch the demos</a><a class="btn ghost" href="https://github.com/Omkar210404/Reel-Forge">View on GitHub</a>
+</div>
+<div class="phone"><video src="media/robot-moon.mp4" poster="media/robot-moon.jpg" autoplay muted loop playsinline></video></div>
+</header>
+
+<section id="reels">
+<h2>Real reels, straight out of ReelForge</h2>
+<p class="sub">Unedited outputs. Voices are free Microsoft neural voices, captions are timed by Whisper, the 3D scenes are Three.js code. Tap a video for sound.</p>
+<div class="reels">
+<figure class="reel"><div class="phone"><video src="media/agent.mp4" poster="media/agent.jpg" controls preload="none" playsinline></video></div>
+<figcaption><span class="tag claude">Written by Claude Code</span><b>What is an AI agent (41 s)</b>Claude wrote the script and storyboarded the scenes: a messy bedroom, a clay volcano that wobbles, gets rebuilt and erupts.</figcaption></figure>
+<figure class="reel"><div class="phone"><video src="media/rag.mp4" poster="media/rag.jpg" controls preload="none" playsinline></video></div>
+<figcaption><span class="tag claude">Animation by Claude Code</span><b>RAG explained (26 s)</b>A little robot learns to look things up in a library before answering.</figcaption></figure>
+<figure class="reel"><div class="phone"><video src="media/robot-moon.mp4" poster="media/robot-moon.jpg" controls preload="none" playsinline></video></div>
+<figcaption><span class="tag hand">Hand-written demo</span><b>Tiny robot on the Moon (11 s)</b>The sample that ships with the repo, to show the animation format.</figcaption></figure>
+</div>
+</section>
+
+<section id="live">
+<h2>The animation is just code: run it here</h2>
+<p class="sub">These are the actual HTML files ReelForge records. They play live in your browser (with placeholder timing, no voice). ReelForge calls their <code>renderFrame(t)</code> 30 times per second of video to record them in sync with the voiceover.</p>
+<div class="live">
+<figure><div class="phone" data-src="live/robot-moon.html"><img src="media/robot-moon.jpg" alt=""><div class="load"><span>&#9654; Run the robot scene</span></div></div>
+<figcaption style="margin-top:10px;color:var(--mute);font-size:14px">Hand-written sample (<a href="live/robot-moon.html">open full screen</a>)</figcaption></figure>
+<figure><div class="phone" data-src="live/rag.html"><img src="media/rag.jpg" alt=""><div class="load"><span>&#9654; Run Claude's RAG scene</span></div></div>
+<figcaption style="margin-top:10px;color:var(--mute);font-size:14px">Written by Claude Code from one prompt (<a href="live/rag.html">open full screen</a>)</figcaption></figure>
+</div>
+</section>
+
+<section id="how">
+<h2>How it works</h2>
+<p class="sub">Everything runs on your computer. Claude is reached through Claude Code on your own plan, so there is no API key in the project.</p>
+<div class="steps">
+<div class="step"><h3>Script</h3><p>Type a topic. Claude Code writes a hook-first script, as narration or as a mini movie where the characters talk.</p></div>
+<div class="step"><h3>Voices</h3><p>Free edge-tts neural voices. In a mini movie each speaker gets their own voice: a cute one for the mascot, a younger one for the kid.</p></div>
+<div class="step"><h3>Word timing</h3><p>faster-whisper listens to the voiceover locally and finds when every word is spoken. Captions keep your exact spelling.</p></div>
+<div class="step"><h3>3D animation</h3><p>Claude storyboards each line (set, props, shot, emotion) and writes one Three.js file. It is told who speaks each word, so talking characters can move their mouths.</p></div>
+<div class="step"><h3>Frame-exact recording</h3><p>Headless Edge or Chrome renders <code>renderFrame(t)</code> for every frame on your GPU, so the picture stays in sync with the voice.</p></div>
+<div class="step"><h3>Final cut</h3><p>FFmpeg adds word-by-word captions (one colour per speaker), mixes music that dips under the voice, and writes a 9:16 MP4.</p></div>
+</div>
+</section>
+
+<section>
+<div class="cols">
+<div>
+<h2>Mini movies</h2>
+<p class="sub">Write lines as <code>NAME: text</code> and ReelForge casts a voice for each character, colours their captions and tells the animation who is talking when.</p>
+<div class="movie"><span class="n">NARRATOR:</span> Arjun stared at a giant mountain of homework.<br><span class="a">ARJUN:</span> I'll never finish all of this alone!<br><span class="c">CLAUDE:</span> Hop hop, don't worry, let me help you!<br><span class="a">ARJUN:</span> Wait, aren't you just a chatbot?<br><span class="c">CLAUDE:</span> No way, I'm an AI agent. I don't just chat, I act!</div>
+<p style="color:var(--mute);font-size:14px">Excerpt of <code>samples/agent-movie.txt</code>, written by Claude Code.</p>
+</div>
+<div>
+<h2>Get started</h2>
+<pre>git clone https://github.com/Omkar210404/Reel-Forge
+cd Reel-Forge
+python -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt && pip install -e .
+reelforge selftest      # checks every stage
+reelforge ui            # http://127.0.0.1:8770</pre>
+<p style="color:var(--mute);font-size:14px;margin-top:12px">Needs Python 3.11+, FFmpeg and Edge or Chrome. For Claude: <code>npm install -g @anthropic-ai/claude-code</code>, then run <code>claude</code> once to log in. Full steps are in the <a href="https://github.com/Omkar210404/Reel-Forge#readme">README</a>.</p>
+</div>
+</div>
+</section>
+
+<section>
+<h2>The app</h2>
+<p class="sub">A small dark web app on <code>127.0.0.1</code>: write or paste a script, describe your characters, press Make reel.</p>
+<img class="shot" src="media/app.png" alt="ReelForge web app" loading="lazy">
+</section>
+
+<section>
+<h2>Honest notes</h2>
+<ul class="plain">
+<li><b>Quality varies run to run.</b> Every animation is freshly written by Claude; some come out better than others. Characters are built from simple shapes and do not lip-sync.</li>
+<li><b>It takes a while.</b> Claude writing a 3D scene took 8-16 minutes for the demos above; recording takes about 2-3 minutes per 30 s on a laptop.</li>
+<li><b>Uses your Claude plan's limits.</b> One 3D reel is one long Claude reply.</li>
+<li><b>Other modes</b> (stock video, free AI pictures, gradients, your own photo) are included for when you do not want 3D.</li>
+</ul>
+</section>
+</div>
+<footer><div class="wrap">ReelForge &middot; MIT licensed &middot; built by <a href="https://github.com/Omkar210404">Omkar Nikam</a> &middot; <a href="https://github.com/Omkar210404/Reel-Forge">Source on GitHub</a></div></footer>
+<script>
+document.querySelectorAll('.phone[data-src]').forEach(p => p.querySelector('.load').addEventListener('click', () => {
+  p.innerHTML = `<iframe src="${p.dataset.src}" title="3D scene" loading="lazy"></iframe>`;
+}));
+</script>
+</body>
+</html>
