@@ -62,3 +62,12 @@ def test_scene_plan_falls_back_to_keywords_without_ollama():
                                  logs.append)
     assert scenes == [{"search": "trenches glowing", "image": "trenches glowing ocean"}]
     assert "using keywords" in logs[0]
+
+
+def test_claude_prompt_numbers_one_scene_per_sentence():
+    from reelforge.animate import claude_prompt, sentences
+    script = "A robot woke up. It looked around! Then it flew home"
+    assert sentences(script) == ["A robot woke up.", "It looked around!", "Then it flew home"]
+    prompt = claude_prompt(script, "space")
+    assert "1. A robot woke up.\n2. It looked around!\n3. Then it flew home" in prompt
+    assert "window.renderFrame" in prompt and "REEL_READY" in prompt

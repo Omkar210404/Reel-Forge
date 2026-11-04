@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import ROOT, load_config, pexels_key
+from .animate import claude_prompt
 from .pipeline import SAMPLE_SCRIPT, find_music, make
 
 OUT = ROOT / "output"
@@ -21,7 +22,11 @@ lock = threading.Lock()
 
 def run_job(req: dict) -> None:
     try:
-        image = None
+        image = html = None
+        if req.get("bg") == "html":
+            html = ROOT / "data" / "ui_animation.html"
+            html.parent.mkdir(parents=True, exist_ok=True)
+            html.write_text(req["html"], encoding="utf-8")
         if req.get("bg") == "image":
             raw = base64.b64decode(req["image"].split(",", 1)[-1])
             image = ROOT / "data" / "ui_image.png"
@@ -35,7 +40,7 @@ def run_job(req: dict) -> None:
         if not req.get("music"):
             cfg["music"]["folder"] = "__none__"
         make(req["script"], OUT / name, bg=req["bg"], topic=req.get("topic", ""),
-             image=str(image) if image else None, voice_name=req["voice"], cfg=cfg,
+             image=str(image) if image else None, html=str(html) if html else None, voice_name=req["voice"], cfg=cfg,
              log=lambda s: job["log"].append(s))
         job["file"] = name
     except Exception as e:
@@ -69,6 +74,9 @@ class Handler(BaseHTTPRequestHandler):
             music = find_music(load_config(), None)
             return self._json({"pexels": bool(pexels_key()), "music": music.name if music else None,
                                "voices": VOICES, "reels": reels[:12], "sample": SAMPLE_SCRIPT})
+        if self.path == "/api/demo":
+            return self._json({"script": (ROOT / "samples" / "robot-moon.txt").read_text(encoding="utf-8"),
+                               "html": (ROOT / "samples" / "robot-moon.html").read_text(encoding="utf-8")})
         if self.path == "/api/status":
             return self._json(job)
         m = re.fullmatch(r"/out/([\w.-]+\.mp4)", self.path)
@@ -93,13 +101,17 @@ class Handler(BaseHTTPRequestHandler):
         self._send(body, "video/mp4", 206 if rng else 200, extra)
 
     def do_POST(self):
-        if self.path != "/api/make":
+        if self.path not in ("/api/make", "/api/prompt"):
             return self._send(b"not found", "text/plain", 404)
         req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        if self.path == "/api/prompt":
+            return self._json({"prompt": claude_prompt(req.get("script", ""), req.get("topic", ""))})
         if not req.get("script", "").strip():
             return self._json({"error": "Paste a script first."}, 400)
         if req.get("bg") == "image" and not req.get("image"):
             return self._json({"error": "Choose a picture for the image background."}, 400)
+        if req.get("bg") == "html" and "renderFrame" not in req.get("html", ""):
+            return self._json({"error": "Paste the HTML Claude made (it must define renderFrame)."}, 400)
         with lock:
             if job["running"]:
                 return self._json({"error": "A reel is already being made."}, 409)
@@ -132,6 +144,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;padding:20p
 label{display:block;font-size:12px;color:var(--mute);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em}
 textarea,input,select{width:100%;background:#0f1218;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit}
 textarea{min-height:190px;resize:vertical}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 12px}
+textarea.code{min-height:110px;font:12px/1.4 Consolas,monospace}button.sm{margin:0 4px;padding:4px 10px;font-size:13px}
 input[type=color]{height:40px;padding:3px}.chk{display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--mute)}.chk input{width:auto}
 button{background:var(--acc);color:#111;border:0;border-radius:8px;padding:11px 18px;font-weight:700;font:inherit;font-weight:700;cursor:pointer;margin-top:16px}
 button.ghost{background:transparent;color:var(--mute);border:1px solid var(--line);font-weight:400}button:disabled{opacity:.5;cursor:wait}
@@ -147,12 +160,15 @@ video{width:100%;height:100%;display:block}.hint{color:var(--mute);font-size:13p
 <div class="row"><div><label for="topic">Topic (optional)</label><input id="topic" placeholder="e.g. morning habits"></div>
 <div><label for="voice">Voice</label><select id="voice"></select></div></div>
 <div class="row"><div><label for="bg">Background</label><select id="bg">
-<option value="auto">Auto: stock video, or AI pictures</option><option value="ai">AI pictures per line (free, slow)</option><option value="pexels">Pexels stock video</option>
+<option value="html">3D cartoon animation by Claude (trending)</option><option value="auto">Auto: stock video, or AI pictures</option><option value="ai">AI pictures per line (free, slow)</option><option value="pexels">Pexels stock video</option>
 <option value="gradient">Animated gradient (fast, offline)</option><option value="image">Pan &amp; zoom on my picture</option></select></div>
 <div><label for="style">Caption style</label><select id="style"><option value="highlight">Word-by-word highlight</option><option value="pop">Phrase pop-in</option></select></div></div>
-<div class="row"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
+<div class="row" id="artrow"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
 <div class="row"><div><label for="wpg">Words per caption</label><input id="wpg" type="number" min="1" max="8" value="3"></div>
 <div><label for="hl">Highlight colour</label><input id="hl" type="color" value="#ffd60a"></div></div>
+<div id="htmlrow"><p class="hint"><b>1.</b> Paste your script above, then <button class="ghost sm" id="cp">Copy Claude prompt</button>
+and send it to Claude (claude.ai works). <b>2.</b> Paste the HTML file Claude replies with below. <button class="ghost sm" id="demo">Load demo</button></p>
+<label for="html">Claude's animation HTML</label><textarea id="html" class="code" placeholder="<!doctype html> ... (from Claude)"></textarea></div>
 <div id="imgrow" hidden><label for="img">Picture</label><input id="img" type="file" accept="image/*"></div>
 <div class="chk"><input id="music" type="checkbox" checked><span id="musiclbl">Background music</span></div>
 <p class="hint" id="bghint"></p>
@@ -170,13 +186,20 @@ async function load(){info=await (await fetch('/api/info')).json();
  $('music').disabled=!info.music;if(!info.music)$('music').checked=false;
  $('reels').innerHTML=info.reels.map(r=>`<a data-r="${r}">${r}</a>`).join('')||'<p class="hint">None yet.</p>';
  document.querySelectorAll('#reels a').forEach(a=>a.onclick=()=>show(a.dataset.r));hint()}
-function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';
+function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';$('htmlrow').hidden=b!=='html';$('artrow').hidden=!["auto","ai","pexels"].includes(b);
  const ai='Free AI pictures are limited to about one every 45 s, so a 30 s reel takes ~6 min.';
  $('bghint').textContent=(b==='auto'||b==='pexels')?(info.pexels?'Pexels key found: real stock video per line.':'No Pexels key in .env. '+ai):b==='ai'?ai:''}
-$('bg').onchange=hint;$('sample').onclick=()=>{$('script').value=info.sample;$('topic').value='morning habits'};
+$('bg').onchange=hint;
+$('cp').onclick=async()=>{if(!$('script').value.trim()){$('log').textContent='Paste a script first.';return}
+ const j=await (await fetch('/api/prompt',{method:'POST',body:JSON.stringify({script:$('script').value,topic:$('topic').value})})).json();
+ try{await navigator.clipboard.writeText(j.prompt);$('log').textContent='Claude prompt copied. Paste it into Claude, then paste the HTML it gives you into the box.'}
+ catch(e){$('log').textContent=j.prompt}};
+$('demo').onclick=async()=>{const d=await (await fetch('/api/demo')).json();$('script').value=d.script;$('html').value=d.html;
+ $('log').textContent='Demo loaded: a tiny robot story with a ready-made 3D animation. Press Make reel.'};$('sample').onclick=()=>{$('script').value=info.sample;$('topic').value='morning habits'};
 const readImg=f=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f)});
 $('go').onclick=async()=>{const body={script:$('script').value,topic:$('topic').value,voice:$('voice').value,bg:$('bg').value,
  style:$('style').value,art:$('art').value,wpg:$('wpg').value,hl:$('hl').value,music:$('music').checked};
+ if(body.bg==='html')body.html=$('html').value;
  if(body.bg==='image'&&$('img').files[0])body.image=await readImg($('img').files[0]);
  const r=await fetch('/api/make',{method:'POST',body:JSON.stringify(body)});const j=await r.json();
  if(j.error){$('log').innerHTML=`<span class="err">${j.error}</span>`;return}
