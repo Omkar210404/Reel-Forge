@@ -77,7 +77,9 @@ STEP 2 - BUILD IT. Rules for a proper scene:
 - ACTING: characters touch, carry, point at and react to the props. Show emotion with the eyes, eyebrows and mouth (worried, surprised, happy), plus body language (slumped, jumping, high-fiving).
 - STAGING: characters never block each other's faces. Place them side by side or staggered in depth, keep their sizes consistent with the descriptions, and keep faces visible.
 - FRAMING (9:16 is narrow): camera FOV about 50. In wide and medium shots show the characters head to feet, about 35-50% of the screen height. Close-ups only on faces or the key prop. Keep the main action in the top 55% of the frame or below 72%: captions cover the band between 55% and 72% of the height.
-- MOTION: easing on everything, a camera move in every shot, small idle motion (breathing, blinking), and a quick transition at each scene change (a fast fade through a colour or a whip pan).
+- MOTION: easing on everything, a camera move in every shot, small idle motion (breathing, blinking), and a quick transition at each scene change (a whip pan or a fade through a colour that lasts 0.25 s at most, so no frame is mostly faded).
+- BRIGHT: every shot is well lit and easy to see on a phone, night scenes included (strong ambient + hemisphere light, a bright key light, lit faces, no near-black areas behind the characters).
+- CAMERA SAFETY: the camera never sits inside or right behind a character's head or body, and nothing fills the foreground so much that it hides the action.
 - LOOK: Pixar-like cartoon. MeshToonMaterial with a small gradient map, saturated colours, a warm key light plus a rim light, soft fog, rounded smooth shapes (spheres with 32+ segments, capsules, rounded boxes), emissive glow for screens and lights.
 
 TECHNICAL RULES (a tool records this page frame by frame, so follow them exactly):
