@@ -49,9 +49,38 @@ LOOK:
 - Pixar-like cartoon: MeshToonMaterial with a small gradient map, bright saturated colours, warm key light plus a rim light, soft fog, rounded shapes (spheres, capsules, rounded boxes).
 - ONE cute main character built from primitives (big glossy eyes with highlights, simple expressive body) that stays the same in every scene and ACTS OUT each line: walks, turns, waves, jumps, reacts.
 - Each scene has its own setting and props and its own camera move (push-in, orbit, follow). Use easing so motion feels alive, plus small idle motion (breathing, blinking).
+- FRAMING (the 9:16 frame is narrow): keep the WHOLE character in view in every scene, head to feet, about 35-50% of the screen height, standing in the upper half of the frame above the caption band. Use a camera FOV around 50 and pull the camera back far enough; close-ups only on the face, never cutting off the head.
+- Smooth, polished shapes: use high segment counts (spheres 32+ segments), rounded edges, a face with big eyes on the FRONT of the head, and a simple colourful ground and background for each scene.
 - Keep it light enough to render at 1080x1920: under ~150k triangles, no heavy post-processing.
 
 Reply with the complete HTML file only."""
+
+
+def ask_claude(script: str, topic: str, out: Path, log) -> Path:
+    """Have the local Claude Code CLI (`claude -p`) write the animation. Uses the user's own
+    Claude plan; no API key. Runs in an empty folder so it only sees the prompt."""
+    import re
+    import shutil
+    import tempfile
+
+    exe = shutil.which("claude")
+    if not exe:
+        raise RuntimeError("Claude Code CLI not found. Install it (npm install -g "
+                           "@anthropic-ai/claude-code) or paste HTML from claude.ai instead.")
+    log("    asking Claude Code to write the 3D animation (usually 5-10 min)...")
+    with tempfile.TemporaryDirectory() as empty:
+        res = subprocess.run([exe, "-p", "--output-format", "text"], input=claude_prompt(script, topic),
+                             capture_output=True, text=True, encoding="utf-8", cwd=empty, timeout=900)
+    reply = res.stdout or ""
+    m = re.search(r"<!doctype html.*?</html>|<html.*?</html>", reply, re.S | re.I)
+    if res.returncode != 0 or not m:
+        raise RuntimeError("Claude Code did not return an HTML file. "
+                           f"{(res.stderr or reply).strip()[:300]}")
+    out.write_text(m[0], encoding="utf-8")
+    if problem := check_html(m[0]):
+        raise RuntimeError(f"Claude's HTML is not usable: {problem}")
+    log(f"    Claude wrote {len(m[0]) // 1024} KB of animation code -> {out.name}")
+    return out
 
 
 def check_html(html: str) -> str | None:

@@ -90,12 +90,16 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
     mode = bg or ("html" if html else cfg["background"]["mode"])
     image = image or cfg["background"]["image"]
     if mode == "html":
-        if not (html and Path(html).exists()):
+        from .animate import ask_claude, check_html
+        if not html:  # nothing pasted: let Claude Code write it, keep it next to the video
+            log("[3/4] visuals    3D cartoon by Claude")
+            html = str(ask_claude(script, topic, out.with_suffix(".html"), log))
+        if not Path(html).exists():
             raise ValueError(f"animation HTML not found: {html!r}")
-        from .animate import check_html
         if problem := check_html(Path(html).read_text(encoding="utf-8", errors="replace")):
             raise ValueError(problem)
         image = html
+        rep["html"] = html
     key = pexels_key() if mode in ("pexels", "auto") else ""
     if mode == "auto":
         mode = "pexels" if key else "ai"
