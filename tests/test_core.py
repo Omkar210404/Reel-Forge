@@ -53,3 +53,12 @@ def test_caption_frame_is_full_size_and_transparent(tmp_path):
     img = Image.open(tmp_path / "c00002.png")
     assert img.size == (540, 960) and img.mode == "RGBA"
     assert img.getpixel((0, 0))[3] == 0 and img.getbbox() is not None
+
+
+def test_scene_plan_falls_back_to_keywords_without_ollama():
+    cfg = {"director_model": "llama3.2:3b", "ollama_url": "http://127.0.0.1:9"}  # nothing listens
+    logs = []
+    scenes = visuals.plan_scenes(["Glowing fish live in the deepest trenches."], "ocean", cfg,
+                                 logs.append)
+    assert scenes == [{"search": "trenches glowing", "image": "trenches glowing ocean"}]
+    assert "using keywords" in logs[0]
