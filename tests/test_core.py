@@ -71,3 +71,9 @@ def test_claude_prompt_numbers_one_scene_per_sentence():
     prompt = claude_prompt(script, "space")
     assert "1. A robot woke up.\n2. It looked around!\n3. Then it flew home" in prompt
     assert "window.renderFrame" in prompt and "REEL_READY" in prompt
+
+
+def test_check_html_rejects_the_prompt_itself():
+    from reelforge.animate import check_html, claude_prompt
+    assert "That is the prompt" in check_html(claude_prompt("A robot woke up."))
+    assert check_html("<html><script>window.renderFrame=t=>{}</script></html>") is None

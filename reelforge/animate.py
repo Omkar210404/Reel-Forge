@@ -54,6 +54,19 @@ LOOK:
 Reply with the complete HTML file only."""
 
 
+def check_html(html: str) -> str | None:
+    """Return a friendly problem description, or None if the HTML looks like an animation."""
+    if "Reply with the complete HTML file only" in html:
+        return ("That is the prompt, not the animation. Paste it into Claude (claude.ai), "
+                "then paste the HTML file Claude replies with here.")
+    if "<script" not in html.lower():
+        return "This doesn't look like an HTML file. Paste the full HTML file Claude made."
+    if "renderFrame" not in html:
+        return ("This HTML has no renderFrame(t). Ask Claude: 'Follow the TECHNICAL RULES, "
+                "define window.renderFrame(t)'.")
+    return None
+
+
 def _browser(pw):
     errors = []
     for channel in ("msedge", "chrome", None):  # installed browsers first: no download needed

@@ -92,6 +92,9 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "",
     if mode == "html":
         if not (html and Path(html).exists()):
             raise ValueError(f"animation HTML not found: {html!r}")
+        from .animate import check_html
+        if problem := check_html(Path(html).read_text(encoding="utf-8", errors="replace")):
+            raise ValueError(problem)
         image = html
     key = pexels_key() if mode in ("pexels", "auto") else ""
     if mode == "auto":

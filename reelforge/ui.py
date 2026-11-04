@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import ROOT, load_config, pexels_key
-from .animate import claude_prompt
+from .animate import check_html, claude_prompt
 from .pipeline import SAMPLE_SCRIPT, find_music, make
 
 OUT = ROOT / "output"
@@ -110,8 +110,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "Paste a script first."}, 400)
         if req.get("bg") == "image" and not req.get("image"):
             return self._json({"error": "Choose a picture for the image background."}, 400)
-        if req.get("bg") == "html" and "renderFrame" not in req.get("html", ""):
-            return self._json({"error": "Paste the HTML Claude made (it must define renderFrame)."}, 400)
+        if req.get("bg") == "html" and (problem := check_html(req.get("html", ""))):
+            return self._json({"error": problem}, 400)
         with lock:
             if job["running"]:
                 return self._json({"error": "A reel is already being made."}, 409)
@@ -166,8 +166,9 @@ video{width:100%;height:100%;display:block}.hint{color:var(--mute);font-size:13p
 <div class="row" id="artrow"><div><label for="art">Picture style (AI pictures)</label><select id="art"><option value="cartoon">3D cartoon (Pixar-style)</option><option value="photo">Realistic photo</option></select></div><div></div></div>
 <div class="row"><div><label for="wpg">Words per caption</label><input id="wpg" type="number" min="1" max="8" value="3"></div>
 <div><label for="hl">Highlight colour</label><input id="hl" type="color" value="#ffd60a"></div></div>
-<div id="htmlrow"><p class="hint"><b>1.</b> Paste your script above, then <button class="ghost sm" id="cp">Copy Claude prompt</button>
-and send it to Claude (claude.ai works). <b>2.</b> Paste the HTML file Claude replies with below. <button class="ghost sm" id="demo">Load demo</button></p>
+<div id="htmlrow"><p class="hint"><b>1.</b> Paste your script above. <b>2.</b> <button class="ghost sm" id="cp">Copy Claude prompt</button>
+and paste it into <a href="https://claude.ai/new" target="_blank" rel="noopener" style="color:var(--acc)">claude.ai</a> (not here).
+<b>3.</b> Copy the HTML file Claude replies with and paste it below. <button class="ghost sm" id="demo">Load demo</button></p>
 <label for="html">Claude's animation HTML</label><textarea id="html" class="code" placeholder="<!doctype html> ... (from Claude)"></textarea></div>
 <div id="imgrow" hidden><label for="img">Picture</label><input id="img" type="file" accept="image/*"></div>
 <div class="chk"><input id="music" type="checkbox" checked><span id="musiclbl">Background music</span></div>
@@ -192,7 +193,7 @@ function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';$('htmlrow'
 $('bg').onchange=hint;
 $('cp').onclick=async()=>{if(!$('script').value.trim()){$('log').textContent='Paste a script first.';return}
  const j=await (await fetch('/api/prompt',{method:'POST',body:JSON.stringify({script:$('script').value,topic:$('topic').value})})).json();
- try{await navigator.clipboard.writeText(j.prompt);$('log').textContent='Claude prompt copied. Paste it into Claude, then paste the HTML it gives you into the box.'}
+ try{await navigator.clipboard.writeText(j.prompt);$('log').textContent='Claude prompt copied. Now paste it into claude.ai (not into this page). When Claude replies with an HTML file, copy that and paste it into the box below.'}
  catch(e){$('log').textContent=j.prompt}};
 $('demo').onclick=async()=>{const d=await (await fetch('/api/demo')).json();$('script').value=d.script;$('html').value=d.html;
  $('log').textContent='Demo loaded: a tiny robot story with a ready-made 3D animation. Press Make reel.'};$('sample').onclick=()=>{$('script').value=info.sample;$('topic').value='morning habits'};

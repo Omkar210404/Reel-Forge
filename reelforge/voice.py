@@ -1,6 +1,7 @@
 """Voiceover (edge-tts) and word timing (faster-whisper aligned back to the script)."""
 import asyncio
 import re
+import time
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -13,7 +14,16 @@ def synthesize(text: str, voice: str, rate: str, out_wav: Path) -> float:
     import edge_tts
 
     mp3 = out_wav.with_suffix(".mp3")
-    asyncio.run(edge_tts.Communicate(text, voice, rate=rate).save(str(mp3)))
+    # The free edge-tts service sometimes drops a request ("NoAudioReceived"); retrying works.
+    for attempt in range(4):
+        try:
+            asyncio.run(edge_tts.Communicate(text, voice, rate=rate).save(str(mp3)))
+            break
+        except Exception as e:  # noqa: BLE001 - network/service errors vary
+            if attempt == 3:
+                raise RuntimeError(f"voice service failed 4 times ({type(e).__name__}). "
+                                   "Check your internet and try again in a minute.") from e
+            time.sleep(2 * (attempt + 1))
     # One decoded WAV is used for both transcription and mixing, so timings match exactly.
     ffmpeg("-i", mp3, "-ac", "1", "-ar", "48000", out_wav)
     mp3.unlink(missing_ok=True)
