@@ -29,54 +29,132 @@ def sentences(text: str) -> list[str]:
     return out
 
 
+WORDS_PER_SECOND = 2.6   # edge-tts at +5% speaks about this fast
+
+
+DIALOGUE_RULES = """Write it as a MINI MOVIE with dialogue:
+- One line per line of text, each starting with the speaker's name in capitals and a colon, e.g.
+NARRATOR: It was midnight, and the project was due tomorrow.
+ARJUN: I don't even know where to start!
+- Mostly the characters talking to each other (natural, fun, short lines a kid would enjoy). NARRATOR only opens the scene, jumps in time, or gives the final takeaway.
+- Use the characters' names exactly as given (one or two words, no apostrophes) as the speaker names.
+- 8 to 14 lines. Each line is one shot of the movie.
+
+Reply with the script lines only. No title, no blank lines, no stage directions."""
+
+TALK_RULES = """
+DIALOGUE - this is a mini movie, so the characters talk:
+- Each line above is spoken by the named character (NARRATOR is an off-screen voice: nobody talks, just show the action).
+- window.REEL.words = [{ start, end, speaker }] lists every spoken word with its speaker NAME in capitals. In renderFrame(t), whoever has a word at time t is talking: open and close their mouth quickly while each word plays (a character with no mouth bounces or squashes its eyes instead) and add small hand gestures. Everyone else listens and reacts (nods, looks at the speaker, surprised or happy faces).
+- Use the rhythm of a film conversation (two-shot, over-the-shoulder, close-up) and turn the speaker partly towards the camera.
+- In preview (no window.REEL) fake the words by spreading each line's words evenly across its 3 seconds.
+"""
+
+
 def claude_prompt(script: str, topic: str = "", characters: str = "") -> str:
-    lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sentences(script)))
-    return f"""Make a 3D cartoon animation for a vertical short video (9:16, 1080x1920) as ONE self-contained HTML file using Three.js.
+    from .voice import parse_dialogue
+    dialogue = parse_dialogue(script)
+    if dialogue:
+        lines = "\n".join(f"{i + 1}. {sp}: {t}" for i, (sp, t) in enumerate(dialogue))
+    else:
+        lines = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sentences(script)))
+    talk = TALK_RULES if dialogue else ""
+    chars = characters.strip()
+    cast = (f"CHARACTERS - build exactly these and keep the same look in every scene:\n{chars}\n"
+            if chars else "CHARACTERS - invent ONE cute main character (big glossy eyes with "
+                          "highlights, simple expressive body) and keep it the same in every scene.\n")
+    return f"""Make a 3D cartoon animation for a vertical short video (9:16, 1080x1920) as ONE self-contained HTML file using Three.js. It should feel like a scene from an animated movie, not two toys moving in front of a camera.
 {f"Topic: {topic}" if topic else ""}
-{f"CHARACTERS - build exactly these, keep the same look in every scene:{chr(10)}{characters.strip()}{chr(10)}" if characters.strip() else ""}
+{cast}
 NARRATION - one scene per line, in this order:
 {lines}
+{talk}
+STEP 1 - STORYBOARD FIRST. Right after <!doctype html>, write an HTML comment <!-- STORYBOARD ... --> with one entry per line: location, the props that line mentions, what each character does, their emotion, the shot (wide / medium / close-up / over-the-shoulder / top-down) and the camera move. No two scenes in a row may use the same shot. Then build exactly that storyboard.
+
+STEP 2 - BUILD IT. Rules for a proper scene:
+- SETS: every location is a full set with depth: a foreground object, the characters in the middle, and a detailed background (walls, windows, furniture, shelves, sky, plants, whatever fits) with 8+ props. Give each location its own colour mood and lighting (warm lamp at night, bright morning, glowing lab and so on).
+- PROPS: every object the narration mentions must be clearly modelled, recognisable at a glance, large enough to read on a phone, and turned towards the camera when it matters. Example: a laptop has a base, keyboard keys and an open glowing screen; "code" is rows of coloured bars on that screen; a test result is a big glowing red or green light. Show ideas visually: icons, lights, arrows, sparkles, things changing colour.
+- ACTING: characters touch, carry, point at and react to the props. Show emotion with the eyes, eyebrows and mouth (worried, surprised, happy), plus body language (slumped, jumping, high-fiving).
+- STAGING: characters never block each other's faces. Place them side by side or staggered in depth, keep their sizes consistent with the descriptions, and keep faces visible.
+- FRAMING (9:16 is narrow): camera FOV about 50. In wide and medium shots show the characters head to feet, about 35-50% of the screen height. Close-ups only on faces or the key prop. Keep the main action in the top 55% of the frame or below 72%: captions cover the band between 55% and 72% of the height.
+- MOTION: easing on everything, a camera move in every shot, small idle motion (breathing, blinking), and a quick transition at each scene change (a fast fade through a colour or a whip pan).
+- LOOK: Pixar-like cartoon. MeshToonMaterial with a small gradient map, saturated colours, a warm key light plus a rim light, soft fog, rounded smooth shapes (spheres with 32+ segments, capsules, rounded boxes), emissive glow for screens and lights.
 
 TECHNICAL RULES (a tool records this page frame by frame, so follow them exactly):
 - Load Three.js with an import map from {THREE_URL} . No other files: no model, texture or font downloads. Build everything from Three.js primitives.
 - Timing comes from window.REEL if it exists: {{ duration, scenes: [{{ start, end, text }}] }} in seconds, one scene per line above. If it does not exist (preview), create a default with the same lines, about 3 seconds each.
-- Define window.renderFrame = (t) => {{ ... }} that sets the WHOLE scene for time t in seconds (positions, rotations, camera, colours) from t alone, then calls renderer.render(scene, camera). No Date.now, performance.now or unseeded Math.random inside it. It must work for any t, in any order.
+- Define window.renderFrame = (t) => {{ ... }} that sets the WHOLE scene for time t in seconds (positions, rotations, visibility, camera, colours) from t alone, then calls renderer.render(scene, camera). No Date.now, performance.now or unseeded Math.random inside it. It must work for any t, in any order.
 - If window.REEL_CAPTURE is not true, run a preview loop with requestAnimationFrame that calls renderFrame(elapsed % duration).
 - Set window.REEL_READY = true once everything is built.
 - The canvas fills the window: renderer.setSize(innerWidth, innerHeight), setPixelRatio(1), antialias on.
-- No text, letters or UI inside the animation (subtitles are added later). Keep the band between 55% and 72% of the screen height free of the main action, because captions go there.
-
-LOOK:
-- Pixar-like cartoon: MeshToonMaterial with a small gradient map, bright saturated colours, warm key light plus a rim light, soft fog, rounded shapes (spheres, capsules, rounded boxes).
-- {'The characters above, built' if characters.strip() else 'ONE cute main character built'} from primitives{'' if characters.strip() else ' (big glossy eyes with highlights, simple expressive body)'}, the same in every scene, ACTING OUT each line: walks, turns, waves, jumps, reacts.
-- Each scene has its own setting and props and its own camera move (push-in, orbit, follow). Use easing so motion feels alive, plus small idle motion (breathing, blinking).
-- FRAMING (the 9:16 frame is narrow): keep the WHOLE character in view in every scene, head to feet, about 35-50% of the screen height, standing in the upper half of the frame above the caption band. Use a camera FOV around 50 and pull the camera back far enough; close-ups only on the face, never cutting off the head.
-- Smooth, polished shapes: use high segment counts (spheres 32+ segments), rounded edges, a face with big eyes on the FRONT of the head, and a simple colourful ground and background for each scene.
-- Keep it light enough to render at 1080x1920: under ~150k triangles, no heavy post-processing.
+- No letters or words inside the animation (subtitles are added later).
+- Keep it light enough to render at 1080x1920: under ~200k triangles, no heavy post-processing.
 
 Reply with the complete HTML file only."""
 
 
-def ask_claude(script: str, topic: str, out: Path, log, characters: str = "") -> Path:
-    """Have the local Claude Code CLI (`claude -p`) write the animation. Uses the user's own
-    Claude plan; no API key. Runs in an empty folder so it only sees the prompt."""
-    import re
+def script_prompt(topic: str, characters: str = "", seconds: int = 45,
+                  dialogue: bool = False) -> str:
+    words = int(seconds * WORDS_PER_SECOND)
+    cast = (f"Characters:\n{characters.strip()}" if characters.strip()
+            else "Invent one cute main character if a character helps.")
+    return f"""Write the voiceover script for a {seconds}-second vertical reel (YouTube Shorts / Instagram Reels) that will be animated as a 3D cartoon.
+Topic: {topic}
+{cast}
+
+Rules:
+- About {words} words, never more than {int(90 * WORDS_PER_SECOND)}. 8 to 12 sentences.
+- Line 1 is a hook: a surprising fact, a bold question or a relatable problem, under 12 words.
+- A clear arc: hook, problem, turning point, the idea explained through what the characters DO, payoff, then a one-line takeaway the viewer remembers.
+- Every sentence is one animated scene: concrete, visual actions and objects (what we SEE), not abstract talk.
+- Short spoken sentences (under 15 words), simple words, no jargon unless the scene shows what it means.
+- Every sentence ends with a full stop, question mark or exclamation mark. No emojis, hashtags, stage directions, quotes, titles or speaker labels.
+
+{DIALOGUE_RULES if dialogue else "Reply with the script only, as one paragraph."}"""
+
+
+def run_claude(prompt: str, timeout: int = 1500) -> str:
+    """Run the local Claude Code CLI (`claude -p`) on the user's own Claude plan (no API key)
+    in an empty temp folder, so it sees only the prompt."""
     import shutil
     import tempfile
 
     exe = shutil.which("claude")
     if not exe:
         raise RuntimeError("Claude Code CLI not found. Install it (npm install -g "
-                           "@anthropic-ai/claude-code) or paste HTML from claude.ai instead.")
-    log("    asking Claude Code to write the 3D animation (usually 5-10 min)...")
+                           "@anthropic-ai/claude-code), run `claude` once to log in, or use "
+                           "claude.ai and paste the result instead.")
     with tempfile.TemporaryDirectory() as empty:
-        res = subprocess.run([exe, "-p", "--output-format", "text"], input=claude_prompt(script, topic, characters),
-                             capture_output=True, text=True, encoding="utf-8", cwd=empty, timeout=900)
-    reply = res.stdout or ""
+        res = subprocess.run([exe, "-p", "--output-format", "text"], input=prompt,
+                             capture_output=True, text=True, encoding="utf-8", cwd=empty,
+                             timeout=timeout)
+    if res.returncode != 0:
+        raise RuntimeError(f"Claude Code failed: {(res.stderr or res.stdout).strip()[:300]}")
+    return res.stdout or ""
+
+
+def write_script(topic: str, characters: str = "", seconds: int = 45,
+                 dialogue: bool = False) -> str:
+    """Have Claude Code write a reel script (15-90 s) for a topic: narration as one paragraph,
+    or a mini movie with one 'NAME: line' per line."""
+    from .voice import SPEAKER_RE
+    seconds = max(15, min(int(seconds), 90))
+    reply = run_claude(script_prompt(topic, characters, seconds, dialogue), timeout=300)
+    if not dialogue:
+        return " ".join(reply.split()).strip('"')
+    lines = [" ".join(ln.replace("**", "").split()) for ln in reply.splitlines()]
+    return "\n".join(ln for ln in lines if SPEAKER_RE.match(ln))
+
+
+def ask_claude(script: str, topic: str, out: Path, log, characters: str = "") -> Path:
+    """Have Claude Code storyboard and write the animation; saves it to `out`."""
+    import re
+
+    log("    asking Claude Code to storyboard and build the 3D animation (usually 5-12 min)...")
+    reply = run_claude(claude_prompt(script, topic, characters))
     m = re.search(r"<!doctype html.*?</html>|<html.*?</html>", reply, re.S | re.I)
-    if res.returncode != 0 or not m:
-        raise RuntimeError("Claude Code did not return an HTML file. "
-                           f"{(res.stderr or reply).strip()[:300]}")
+    if not m:
+        raise RuntimeError(f"Claude Code did not return an HTML file. {reply.strip()[:300]}")
     out.write_text(m[0], encoding="utf-8")
     if problem := check_html(m[0]):
         raise RuntimeError(f"Claude's HTML is not usable: {problem}")
@@ -110,13 +188,16 @@ def _browser(pw):
 
 
 def record(html: Path, scenes: list[dict], total: float, w: int, h: int, fps: int,
-           out: Path, log) -> None:
+           out: Path, log, words: list[dict] | None = None) -> None:
     """Open the HTML in a headless browser and record renderFrame(t) for every frame."""
     from playwright.sync_api import sync_playwright
 
     reel = {"duration": round(total, 3), "width": w, "height": h,
             "scenes": [{"start": round(s["start"], 3), "end": round(s["end"], 3),
-                        "text": s["text"]} for s in scenes]}
+                        "text": s["text"], "speaker": s.get("speaker")} for s in scenes]}
+    if words and any(x.get("speaker") for x in words):  # who is talking when, for mouth movement
+        reel["words"] = [{"start": x["start"], "end": x["end"], "speaker": x.get("speaker")}
+                         for x in words]
     frames = round(total * fps)
     enc = subprocess.Popen(
         [binary("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe",

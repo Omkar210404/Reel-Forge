@@ -9,6 +9,7 @@ whisper_model = "base.en"                  # faster-whisper model used for word 
 width = 1080
 height = 1920
 fps = 30
+max_seconds = 90         # reels longer than this are refused
 
 [background]
 # auto     = Pexels stock video if PEXELS_API_KEY is set, otherwise free AI images

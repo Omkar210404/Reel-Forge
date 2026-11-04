@@ -10,6 +10,8 @@ from .config import ROOT, load_config, pexels_key
 from .ffmpeg import binary, ffmpeg, probe
 
 TAIL = 0.6  # seconds of silence kept after the last word
+# Caption highlight per speaker in dialogue scripts (the narrator keeps the configured colour).
+SPEAKER_COLORS = ["#5CE1E6", "#FF9F43", "#FF6B9D", "#A3E635", "#C084FC"]
 
 SAMPLE_SCRIPT = ("Most people check their phone within minutes of waking up. "
                  "Try this instead: drink a glass of water, and step outside for two minutes. "
@@ -52,16 +54,23 @@ def assemble(bg: Path, cap_list: Path, voice_wav: Path, music: Path | None, tota
 
 
 def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", characters: str = "",
-         image: str | None = None, html: str | None = None, music: str | None = None, voice_name: str | None = None,
+         cast: str = "", image: str | None = None, html: str | None = None, music: str | None = None, voice_name: str | None = None,
          overrides: dict | None = None, cfg: dict | None = None, keep_work: bool = False,
          log=print) -> dict:
     """Build a reel from script text. Returns a report dict used by the CLI, UI and selftest."""
     cfg = cfg or load_config()
     for section, vals in (overrides or {}).items():
         cfg[section].update(vals)
-    script = " ".join(script.split())
+    raw = script
+    dialogue = voice.parse_dialogue(raw)   # "NAME: line" on every line -> mini movie
+    script = " ".join(t for _, t in dialogue) if dialogue else " ".join(raw.split())
     if not script:
         raise ValueError("script is empty")
+    max_s = float(cfg["video"].get("max_seconds", 90))
+    if len(script.split()) / 2.6 > max_s + 5:   # rough check before spending time on TTS
+        raise ValueError(f"script is {len(script.split())} words (about "
+                         f"{len(script.split()) / 2.6:.0f}s). Reels must be {max_s:.0f}s or less: "
+                         f"keep it under about {int(max_s * 2.6)} words.")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     work = ROOT / "data" / "work" / time.strftime("%Y%m%d-%H%M%S")
@@ -70,10 +79,21 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", char
     t0 = time.time()
     v = cfg["video"]
 
-    log("[1/4] voiceover   edge-tts " + (voice_name or cfg["voice"]["name"]))
     wav = work / "voice.wav"
-    dur = voice.synthesize(script, voice_name or cfg["voice"]["name"], cfg["voice"]["rate"], wav)
+    main_voice = voice_name or cfg["voice"]["name"]
+    segments = None
+    if dialogue:
+        voices = voice.cast_voices([sp for sp, _ in dialogue], main_voice, cast)
+        log("[1/4] voiceover   dialogue: " + ", ".join(
+            f"{sp}={v}{'' if p == '+0Hz' else p}" for sp, (v, p) in voices.items()))
+        dur, segments = voice.synthesize_dialogue(dialogue, voices, cfg["voice"]["rate"], wav)
+    else:
+        log("[1/4] voiceover   edge-tts " + main_voice)
+        dur = voice.synthesize(script, main_voice, cfg["voice"]["rate"], wav)
     total = dur + TAIL
+    if dur > max_s:
+        raise ValueError(f"voiceover is {dur:.0f}s, but reels must be {max_s:.0f}s or less. "
+                         "Shorten the script.")
     rep.update(voice=str(wav), voice_seconds=round(dur, 2))
     log(f"      {dur:.1f}s of speech")
 
@@ -81,6 +101,20 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", char
     words_in = voice.script_words(script)
     heard = voice.transcribe(wav, cfg["voice"]["whisper_model"])
     words, matched = voice.align(words_in, heard, dur)
+    scenes = None
+    if segments:  # tag each word with its speaker; one scene per spoken line
+        colors, k = {}, 0
+        for seg in segments:
+            sp = seg["speaker"]
+            hl = cfg["captions"]["highlight_color"] if sp == "NARRATOR" else colors.setdefault(
+                sp, SPEAKER_COLORS[len(colors) % len(SPEAKER_COLORS)])
+            for _ in voice.script_words(seg["text"]):
+                if k < len(words):
+                    words[k].update(speaker=sp, hl=hl)
+                    k += 1
+        scenes = [{"start": 0.0 if i == 0 else s["start"],
+                   "end": segments[i + 1]["start"] if i + 1 < len(segments) else total,
+                   "text": s["text"], "speaker": s["speaker"]} for i, s in enumerate(segments)]
     (work / "words.json").write_text(json.dumps(words, indent=1), encoding="utf-8")
     cap_list, phrases = captions.build(words, cfg["captions"], v["width"], v["height"], v["fps"],
                                        total, work / "captions")
@@ -93,7 +127,7 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", char
         from .animate import ask_claude, check_html
         if not html:  # nothing pasted: let Claude Code write it, keep it next to the video
             log("[3/4] visuals    3D cartoon by Claude")
-            html = str(ask_claude(script, topic, out.with_suffix(".html"), log, characters))
+            html = str(ask_claude(raw, topic, out.with_suffix(".html"), log, characters))
         if not Path(html).exists():
             raise ValueError(f"animation HTML not found: {html!r}")
         if problem := check_html(Path(html).read_text(encoding="utf-8", errors="replace")):
@@ -110,7 +144,7 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", char
         raise ValueError(f"background image not found: {image!r}")
     log(f"[3/4] visuals    mode={mode}")
     bg_video, kinds = visuals.build(words, total, cfg["background"], v, mode, image or "",
-                                    topic, key, work / "bg", log)
+                                    topic, key, work / "bg", log, scenes)
     rep.update(background=str(bg_video), beats=kinds)
 
     track = find_music(cfg, music)
