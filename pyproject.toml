@@ -1,0 +1,17 @@
+[project]
+name = "reelforge"
+version = "0.1.0"
+description = "Script in, faceless vertical reel out: edge-tts voice, word-synced captions, stock or generated visuals, FFmpeg."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["edge-tts", "faster-whisper", "pillow", "requests", "python-dotenv"]
+
+[project.scripts]
+reelforge = "reelforge.__main__:main"
+
+[tool.setuptools]
+packages = ["reelforge"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
