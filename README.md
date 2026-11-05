@@ -6,6 +6,8 @@ Its main mode makes **3D cartoon reels written by Claude**, the trending style w
 
 Everything runs on your computer. There are no paid APIs and no API keys in the code.
 
+**Demo site with the reels and live 3D scenes: https://omkar210404.github.io/Reel-Forge/**
+
 ![ReelForge web app](docs/app.png)
 
 **Real frames from reels made with ReelForge** (captions burned in):
@@ -197,8 +199,8 @@ All settings (voice, speed, resolution, max length, background mode, caption fon
 
 - **3D quality varies run to run.** It depends on the animation Claude writes. Characters are built from primitives and do not lip-sync. If an animation breaks the `renderFrame` rule, ReelForge stops with a clear error; press Make reel again for a new version.
 - **Claude Code uses your plan's limits.** A 3D reel is one long Claude reply.
-- **Mini movies are new.** Dialogue voices, per-speaker captions and scene timing are tested (with a gradient background), and Claude Code wrote `samples/agent-movie.txt`, but a full 3D mini-movie render has not finished yet: see the next point.
-- **Known bug: a slow Claude call can hang.** On Windows, if Claude Code runs past the 25-minute timeout, ReelForge can keep waiting instead of stopping. Stop it with Ctrl+C and press Make reel again. A fix is planned.
+- **Mini movies are new.** Dialogue voices, per-speaker captions and scene timing are tested (with a gradient background), and Claude Code wrote `samples/agent-movie.txt`. Whether each character's mouth moves on their words depends on the animation Claude writes.
+- **Long scripts take longer.** Claude Code gets up to 40 minutes per animation. If it runs over, ReelForge stops it cleanly and says so; press Make reel again.
 - **AI pictures** (Pollinations free tier) are slow (about one per 45 s), 576x1024 (slightly soft), and carry a small `pollinations.ai` mark that ReelForge leaves in place.
 - **Pexels mode** has only been tested for its fallback (a bad key switches to other visuals), not with a real key.
 - **Ducking** has been tested with a generated tone, not judged by ear on real music.

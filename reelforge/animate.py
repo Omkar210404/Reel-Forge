@@ -115,7 +115,7 @@ Rules:
 {DIALOGUE_RULES if dialogue else "Reply with the script only, as one paragraph."}"""
 
 
-def run_claude(prompt: str, timeout: int = 1500) -> str:
+def run_claude(prompt: str, timeout: int = 2400) -> str:
     """Run the local Claude Code CLI (`claude -p`) on the user's own Claude plan (no API key)
     in an empty temp folder, so it sees only the prompt."""
     import shutil
@@ -126,13 +126,36 @@ def run_claude(prompt: str, timeout: int = 1500) -> str:
         raise RuntimeError("Claude Code CLI not found. Install it (npm install -g "
                            "@anthropic-ai/claude-code), run `claude` once to log in, or use "
                            "claude.ai and paste the result instead.")
+    import os
+    # Output goes to files, not pipes: on Windows `claude` is a .cmd wrapper, and a pipe held
+    # open by the real claude.exe would block forever after a timeout.
     with tempfile.TemporaryDirectory() as empty:
-        res = subprocess.run([exe, "-p", "--output-format", "text"], input=prompt,
-                             capture_output=True, text=True, encoding="utf-8", cwd=empty,
-                             timeout=timeout)
-    if res.returncode != 0:
-        raise RuntimeError(f"Claude Code failed: {(res.stderr or res.stdout).strip()[:300]}")
-    return res.stdout or ""
+        out_f, err_f = Path(empty) / "out.txt", Path(empty) / "err.txt"
+        work = Path(empty) / "work"
+        work.mkdir()
+        with open(out_f, "w", encoding="utf-8") as so, open(err_f, "w", encoding="utf-8") as se:
+            proc = subprocess.Popen(
+                [exe, "-p", "--output-format", "text", "--disallowedTools", "Bash", "Edit",
+                 "Write"], stdin=subprocess.PIPE, stdout=so, stderr=se, cwd=work,
+                text=True, encoding="utf-8")
+            proc.stdin.write(prompt)
+            proc.stdin.close()
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                if os.name == "nt":   # kill the whole tree: cmd.exe -> claude.exe
+                    subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                                   capture_output=True)
+                else:
+                    proc.kill()
+                proc.wait(timeout=30)
+                raise RuntimeError(f"Claude Code took longer than {timeout // 60} minutes and "
+                                   "was stopped. Press Make reel again, or shorten the script.")
+        out = out_f.read_text(encoding="utf-8", errors="replace")
+        err = err_f.read_text(encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Claude Code failed: {(err or out).strip()[:300]}")
+    return out
 
 
 def write_script(topic: str, characters: str = "", seconds: int = 45,
