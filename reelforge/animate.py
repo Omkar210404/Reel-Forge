@@ -97,7 +97,8 @@ Reply with the complete HTML file only."""
 
 def script_prompt(topic: str, characters: str = "", seconds: int = 45,
                   dialogue: bool = False) -> str:
-    words = int(seconds * WORDS_PER_SECOND)
+    wps = 1.75 if dialogue else WORDS_PER_SECOND   # dialogue voices speak slower, plus pauses
+    words = int(seconds * wps)
     cast = (f"Characters:\n{characters.strip()}" if characters.strip()
             else "Invent one cute main character if a character helps.")
     return f"""Write the voiceover script for a {seconds}-second vertical reel (YouTube Shorts / Instagram Reels) that will be animated as a 3D cartoon.
@@ -105,7 +106,7 @@ Topic: {topic}
 {cast}
 
 Rules:
-- About {words} words, never more than {int(90 * WORDS_PER_SECOND)}. 8 to 12 sentences.
+- About {words} words in total (speaker names not counted), never more than {int(85 * wps)}. 8 to 12 sentences.
 - Line 1 is a hook: a surprising fact, a bold question or a relatable problem, under 12 words.
 - A clear arc: hook, problem, turning point, the idea explained through what the characters DO, payoff, then a one-line takeaway the viewer remembers.
 - Every sentence is one animated scene: concrete, visual actions and objects (what we SEE), not abstract talk.

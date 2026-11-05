@@ -67,10 +67,10 @@ def make(script: str, out: Path, *, bg: str | None = None, topic: str = "", char
     if not script:
         raise ValueError("script is empty")
     max_s = float(cfg["video"].get("max_seconds", 90))
-    if len(script.split()) / 2.6 > max_s + 5:   # rough check before spending time on TTS
-        raise ValueError(f"script is {len(script.split())} words (about "
-                         f"{len(script.split()) / 2.6:.0f}s). Reels must be {max_s:.0f}s or less: "
-                         f"keep it under about {int(max_s * 2.6)} words.")
+    est = voice.estimate_seconds(raw)   # rough check before spending time on TTS
+    if est > max_s:
+        raise ValueError(f"script is about {est:.0f}s long, but reels must be {max_s:.0f}s or "
+                         "less. Shorten it (dialogue voices speak slower than narration).")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     work = ROOT / "data" / "work" / time.strftime("%Y%m%d-%H%M%S")

@@ -50,6 +50,19 @@ def parse_dialogue(text: str) -> list[tuple[str, str]] | None:
     return [(m[1].strip().upper(), " ".join(m[2].split())) for m in found]
 
 
+# Measured speaking speeds: narration (Andrew, +5%) ~2.6 words/s; dialogue voices ~1.9 words/s
+# (the cute child voice is the slowest), plus a 0.3 s pause between lines.
+NARRATION_WPS, DIALOGUE_WPS, LINE_GAP = 2.6, 1.9, 0.3
+
+
+def estimate_seconds(text: str) -> float:
+    lines = parse_dialogue(text)
+    if lines:
+        words = sum(len(t.split()) for _, t in lines)
+        return words / DIALOGUE_WPS + LINE_GAP * (len(lines) - 1)
+    return len(text.split()) / NARRATION_WPS
+
+
 def cast_voices(speakers: list[str], narrator_voice: str, overrides: str = "") -> dict:
     """Map each speaker to (voice, pitch). `overrides` looks like
     'CLAUDE=en-US-AnaNeural, ARJUN=en-IN-PrabhatNeural+20Hz'."""

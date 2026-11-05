@@ -207,8 +207,13 @@ function hint(){const b=$('bg').value;$('imgrow').hidden=b!=='image';$('htmlrow'
  const ai='Free AI pictures are limited to about one every 45 s, so a 30 s reel takes ~6 min.';
  $('bghint').textContent=(b==='auto'||b==='pexels')?(info.pexels?'Pexels key found: real stock video per line.':'No Pexels key in .env. '+ai):b==='ai'?ai:''}
 $('bg').onchange=hint;
-const wc=()=>{const n=$('script').value.trim().split(/\s+/).filter(Boolean).length,s=Math.round(n/2.6);
- $('wc').innerHTML=`${n} words &middot; about ${s}s`+(s>90?' <span class="err">(too long: reels must be 90 s or less)</span>':'')};
+const SPK=/^\s*[A-Za-z][\w-]*(?: [A-Za-z0-9][\w-]*){0,2}\s*:\s*\S/;
+const wc=()=>{const t=$('script').value.trim(),ls=t.split('
+').filter(l=>l.trim());
+ const dlg=ls.length>1&&ls.every(l=>SPK.test(l));
+ const n=dlg?ls.reduce((a,l)=>a+l.slice(l.indexOf(':')+1).trim().split(/\s+/).length,0):t.split(/\s+/).filter(Boolean).length;
+ const s=Math.round(dlg?n/1.9+0.3*(ls.length-1):n/2.6);
+ $('wc').innerHTML=`${dlg?'mini movie, '+ls.length+' lines, ':''}${n} words &middot; about ${s}s`+(s>90?' <span class="err">(too long: reels must be 90 s or less)</span>':'')};
 $('script').oninput=wc;
 $('ws').onclick=async()=>{if(!$('topic').value.trim()){$('log').textContent='Type a topic first, then press Write script with Claude.';return}
  $('ws').disabled=true;$('log').textContent='Claude is writing your script (about 30-60 s)...';
